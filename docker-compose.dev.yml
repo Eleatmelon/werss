@@ -14,9 +14,9 @@ services:
     container_name: postgres-dev
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-werss_db}
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin123}
       POSTGRES_INITDB_ARGS: "-E UTF8 --locale=C"
       TZ: Asia/Shanghai
     command:
@@ -33,13 +33,12 @@ services:
       - ./data/postgres-data-dev:/var/lib/postgresql/data
       - ./init-db:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-werss_db}"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - werss_network
-
 
   # ==================== MinIO 对象存储 ====================
   minio:
@@ -49,7 +48,7 @@ services:
     command: server /data --console-address ":9001"
     environment:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-admin}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-admin123}
       - MINIO_BROWSER_REDIRECT_URL=http://localhost:9001
       - MINIO_SERVER_URL=http://localhost:9000
     ports:
@@ -65,18 +64,49 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
- 
- 
-# volumes 已改为直接挂载到 ./data 目录，不再使用命名卷
-# 注意：开发环境使用 -dev 后缀的数据目录，避免与生产环境冲突
+
+  # ==================== WeRSS 应用服务 ====================
+  werss:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - BROWSER_TYPE=${BROWSER_TYPE:-firefox}
+    container_name: werss-dev
+    restart: unless-stopped
+    environment:
+      - DB=postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin123}@postgres:5432/${POSTGRES_DB:-werss_db}
+      - PORT=8001
+      - DEBUG=True
+      - AUTO_RELOAD=False
+      - WERSS_USERNAME=${WERSS_USERNAME:-admin}
+      - WERSS_PASSWORD=${WERSS_PASSWORD:-admin123}
+      - BROWSER_TYPE=${BROWSER_TYPE:-firefox}
+      - PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-admin}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-admin123}
+      - MINIO_SECURE=False
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data/werss-data-dev:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - werss_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
 networks:
   werss_network:
     driver: bridge
     name: werss_network
-    # 移除固定子网配置，让 Docker 自动分配以避免与其他网络冲突
-    # 如果需要固定子网，可以取消下面的注释并修改为不冲突的子网
-    # ipam:
-    #   config:
-    #     - subnet: 172.29.0.0/16
-
