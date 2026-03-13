@@ -95,11 +95,22 @@ COPY --from=frontend-builder /app/web_ui/dist ./static
 # 注意：Playwright 是 Python 包，需要先安装 Python 依赖
 # 使用 ARG 接收构建参数，ENV 设置运行时环境变量
 ARG BROWSER_TYPE=firefox
+ARG TARGETARCH
+# 根据架构选择 Playwright 下载源：
+# - ARM 架构 (arm64) 使用官方源，因为国内镜像缺少 ARM 版本
+# - AMD64 架构使用国内镜像源加速下载
 ENV BROWSER_TYPE=${BROWSER_TYPE} \
-    PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright \
     PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=300000
-# PLAYWRIGHT_BROWSERS_PATH 在运行时由 install.sh 设置
-RUN python3 -m playwright install ${BROWSER_TYPE} --with-deps || \
+# 根据架构动态设置 PLAYWRIGHT_DOWNLOAD_HOST
+RUN if [ "$TARGETARCH" = "arm64" ]; then \
+        echo "检测到 ARM64 架构，使用官方 Playwright 下载源"; \
+        export PLAYWRIGHT_DOWNLOAD_HOST=https://playwright.azureedge.net; \
+    else \
+        echo "检测到 AMD64 架构，使用国内镜像源加速"; \
+        export PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright; \
+    fi && \
+    echo "PLAYWRIGHT_DOWNLOAD_HOST=$PLAYWRIGHT_DOWNLOAD_HOST" && \
+    python3 -m playwright install ${BROWSER_TYPE} --with-deps || \
     (echo "Playwright 浏览器安装失败，将在运行时安装" && true)
 
 # 设置脚本权限

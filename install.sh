@@ -120,8 +120,16 @@ INSTALL=${INSTALL:-False}
 # 根据环境变量决定是否安装浏览器
 if [ "$INSTALL" = True ]; then
     echo "INSTALL环境变量为$INSTALL，开始安装playwright浏览器..."
-    # 使用国内镜像源加速下载（注意：URL 末尾不要有斜杠，避免双斜杠问题）
-    export PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright
+    
+    # 检测系统架构，ARM 架构使用官方源，AMD64 使用国内镜像源
+    ARCH=$(uname -m)
+    if [ "$ARCH" = "arm64" ] || [ "$ARCH" = "aarch64" ]; then
+        echo "检测到 ARM 架构 ($ARCH)，使用官方 Playwright 下载源"
+        export PLAYWRIGHT_DOWNLOAD_HOST=https://playwright.azureedge.net
+    else
+        echo "检测到 x86_64/AMD64 架构，使用国内镜像源加速下载"
+        export PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright
+    fi
     export PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=300000
     playwright install $BROWSER_TYPE --with-deps
 else
