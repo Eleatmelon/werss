@@ -156,7 +156,14 @@ api_router.include_router(dashboard_router)
 api_router.include_router(api_key_router)
 
 # 添加独立的健康检查端点（用于 Docker healthcheck）
-# 注意：这个端点不通过 API_BASE，直接使用 /api/v1/sys/version
+# /api/health：compose healthcheck、负载均衡探活常用
+# /api/v1/sys/version：带版本信息的探活（不随 API_BASE 变化）
+@app.get("/api/health", tags=["健康检查"], include_in_schema=False)
+async def health_check():
+    from fastapi.responses import JSONResponse
+    return JSONResponse({"status": "ok"})
+
+
 @app.get("/api/v1/sys/version", tags=["健康检查"], include_in_schema=False)
 async def health_check_version():
     """健康检查端点，返回版本信息"""
