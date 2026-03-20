@@ -101,7 +101,7 @@ safe:
     # 需要隐藏的配置信息，用逗号分隔 如：db,secret,token等 
     hide_config: "${SAFE_HIDE_CONFIG:-db,secret,token,notice.wechat,notice.feishu,notice.dingding}"
     # 授权加密KEY
-    lic_key: "${SAFE_LIC_KEY:-DEEPLINGTECH}"
+    lic_key: "${SAFE_LIC_KEY:-CHANGE_ME}"
 log:
   #日志文件路径，默认为空字符串，表示不输出到文件。如果要输出到文件，可以指定一个路径如：/var/log/werss.log 如果为空就不纪录
    file: ${LOG_FILE:-}

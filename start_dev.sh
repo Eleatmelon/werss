@@ -295,7 +295,7 @@ start_backend() {
             if [ -f ".env" ]; then
                 source .env 2>/dev/null || true
             fi
-            POSTGRES_USER=${POSTGRES_USER:-deepling_user}
+            POSTGRES_USER=${POSTGRES_USER:-admin}
             POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-your_password}
             POSTGRES_DB=${POSTGRES_DB:-werss_db}
             
@@ -391,7 +391,7 @@ start_backend() {
         if [ -f ".env" ]; then
             # 使用 grep 读取，避免 source 可能的问题（如果上面的 source 失败）
             if [ -z "$POSTGRES_USER" ]; then
-            export POSTGRES_USER=$(grep "^POSTGRES_USER=" .env 2>/dev/null | cut -d'=' -f2 | tr -d '"' | tr -d "'" || echo "deepling_user")
+            export POSTGRES_USER=$(grep "^POSTGRES_USER=" .env 2>/dev/null | cut -d'=' -f2 | tr -d '"' | tr -d "'" || echo "admin")
             fi
             if [ -z "$POSTGRES_PASSWORD" ]; then
             export POSTGRES_PASSWORD=$(grep "^POSTGRES_PASSWORD=" .env 2>/dev/null | cut -d'=' -f2 | tr -d '"' | tr -d "'" || echo "")
@@ -407,7 +407,7 @@ start_backend() {
         fi
         
         # 设置默认值
-        POSTGRES_USER=${POSTGRES_USER:-deepling_user}
+        POSTGRES_USER=${POSTGRES_USER:-admin}
         POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-your_password}
         POSTGRES_DB=${POSTGRES_DB:-werss_db}
         

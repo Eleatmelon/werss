@@ -29,7 +29,7 @@ if os.path.exists(env_path):
         
         # 如果 DB 环境变量未设置，尝试从 PostgreSQL 配置构建
         if not os.getenv("DB"):
-            postgres_user = os.getenv("POSTGRES_USER", "deepling_user")
+            postgres_user = os.getenv("POSTGRES_USER", "admin")
             postgres_password = os.getenv("POSTGRES_PASSWORD", "")
             postgres_db = os.getenv("POSTGRES_WERSS_DB") or os.getenv("POSTGRES_DB", "werss_db")
             postgres_host = os.getenv("POSTGRES_HOST", "localhost")

@@ -435,17 +435,17 @@ docker run -d -p 8001:8001 werss:latest
 
 **注意**：Docker 镜像已包含前端构建，无需单独启动前端服务。前端和 API 都通过 `http://localhost:8001` 访问。
 
-#### Docker Compose：已有主栈 / 独立 WeRSS（推荐与 Traefik 主栈共用库时）
+#### Docker Compose：已有外部数据库 / 对象存储
 
-若机器上 **已有** PostgreSQL、MinIO、Traefik（例如与 deepling 主栈共用），不要用 `docker-compose.dev.yml`（会再起一套库并占用端口）。请使用仅包含应用容器的编排：
+若机器上已有 PostgreSQL 和 MinIO，不需要完整栈（会再起一套库并占用端口）。请使用仅包含应用容器的编排：
 
 ```bash
-docker compose -f docker-compose.standalone.yml up -d --build
+docker compose -f docker-compose.app-only.yml up -d --build
 ```
 
-说明见 [docs/DOCKER_STANDALONE.md](docs/DOCKER_STANDALONE.md)。
+说明见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。
 
-**配置优先级与重启：** 默认情况下，控制台写入数据库表 `config_management` 的项会**优先于** `.env` / yaml 中同含义的配置；进程重启不会清空数据库中的这些值。若希望 **`.env` 优先**、仅在环境变量未设置或为空时才回退到表里的值，请设置 `WERSS_ENV_OVERRIDES_DB=true`。详见 [docs/DOCKER_STANDALONE.md](docs/DOCKER_STANDALONE.md) 中的「配置优先级、控制台与重启」。
+**配置优先级与重启：** 默认情况下，控制台写入数据库表 `config_management` 的项会**优先于** `.env` / yaml 中同含义的配置；进程重启不会清空数据库中的这些值。若希望 **`.env` 优先**、仅在环境变量未设置或为空时才回退到表里的值，请设置 `WERSS_ENV_OVERRIDES_DB=true`。详见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) 中的「配置优先级」。
 
 #### Docker Compose 开发环境（推荐）
 

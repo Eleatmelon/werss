@@ -38,7 +38,7 @@ brew install python@3.11
 
 **方式一：使用 uv（推荐，更快）**
 ```bash
-cd /home/hao/deepling.tech/werss
+cd /path/to/werss
 
 # 安装 uv（如果还没有）
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -54,7 +54,7 @@ source .venv/bin/activate  # Linux/Mac
 
 **方式二：使用传统 venv**
 ```bash
-cd /home/hao/deepling.tech/werss
+cd /path/to/werss
 
 # 创建虚拟环境
 python3 -m venv venv
@@ -155,7 +155,7 @@ uvicorn web:app --host 0.0.0.0 --port 8001 --reload --reload-dir core --reload-d
 
 ```bash
 # 1. 进入主项目目录
-cd /home/hao/deepling.tech
+cd /path/to/werss
 
 # 2. 确保 PostgreSQL 已启动
 docker-compose -f docker-compose.dev.yml up -d postgres
@@ -191,7 +191,7 @@ docker-compose -f docker-compose.dev.yml restart werss
 ### 直接使用 Docker
 
 ```bash
-cd /home/hao/deepling.tech/werss
+cd /path/to/werss
 
 # 构建镜像
 docker build -f Dockerfile.cn -t werss:dev .
@@ -460,7 +460,7 @@ chmod 755 data
 
 ```bash
 # 完整启动流程
-cd /home/hao/deepling.tech/werss
+cd /path/to/werss
 source venv/bin/activate
 export DB=postgresql://user:pass@localhost:5432/werss_db
 export DEBUG=True AUTO_RELOAD=True
@@ -471,7 +471,7 @@ python main.py -job True -init False
 
 ```bash
 # 启动
-cd /home/hao/deepling.tech
+cd /path/to/werss
 docker-compose -f docker-compose.dev.yml up -d --build werss
 
 # 查看日志
@@ -504,7 +504,7 @@ netstat -tlnp | grep 8001
 1. **首次设置**：
    ```bash
    # 本地开发环境
-   cd /home/hao/deepling.tech/werss
+   cd /path/to/werss
    python3 -m venv venv
    source venv/bin/activate
    pip install -r requirements.txt

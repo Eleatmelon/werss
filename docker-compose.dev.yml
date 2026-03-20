@@ -1,114 +1,26 @@
-# ==================== 本地开发配置 ====================
-# 使用方式: docker-compose -f docker-compose.dev.yml up -d
-# 
-# 特点：
-# - 所有服务直接暴露端口，方便本地访问
-# - 不需要 Traefik 和域名配置
-# - MinIO 使用 HTTP 访问
-# - 简化配置，快速启动
+# ==================== 本地开发覆盖 ====================
+# 在完整栈基础上启用调试模式，容器名加 -dev 后缀，数据目录隔离。
+#
+# 使用方式：
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 #
 # 注意：ARM 架构设备（如 MacBook M1/M2/M3, Mac Mini M4）
 # 请确保使用 Dockerfile.cn 构建，它会自动检测架构并选择正确的 Playwright 下载源
 
 services:
-  # ==================== PostgreSQL 数据库 ====================
   postgres:
-    image: postgres:16-alpine
-    container_name: postgres-dev
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-werss_db}
-      POSTGRES_USER: ${POSTGRES_USER:-admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin123}
-      POSTGRES_INITDB_ARGS: "-E UTF8 --locale=C"
-      TZ: Asia/Shanghai
-    command:
-      - "postgres"
-      - "-c"
-      - "max_connections=200"
-      - "-c"
-      - "shared_buffers=256MB"
-      - "-c"
-      - "work_mem=4MB"
-    ports:
-      - "5432:5432"  # 直接暴露，方便本地连接
+    container_name: werss-postgres-dev
     volumes:
       - ./data/postgres-data-dev:/var/lib/postgresql/data
-      - ./init-db:/docker-entrypoint-initdb.d
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-werss_db}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - werss_network
 
-  # ==================== MinIO 对象存储 ====================
   minio:
-    image: minio/minio:latest
-    container_name: minio-dev
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-admin}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-admin123}
-      - MINIO_BROWSER_REDIRECT_URL=http://localhost:9001
-      - MINIO_SERVER_URL=http://localhost:9000
-    ports:
-      - "9000:9000"  # API 端口
-      - "9001:9001"  # Console 端口
+    container_name: werss-minio-dev
     volumes:
       - ./data/minio-data-dev:/data
-    networks:
-      - werss_network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
 
-  # ==================== WeRSS 应用服务 ====================
   werss:
-    build:
-      context: .
-      dockerfile: Dockerfile.cn
-      args:
-        - BROWSER_TYPE=${BROWSER_TYPE:-firefox}
     container_name: werss-dev
-    restart: unless-stopped
     environment:
-      - DB=postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin123}@postgres:5432/${POSTGRES_DB:-werss_db}
-      - PORT=8001
       - DEBUG=True
-      - AUTO_RELOAD=False
-      - WERSS_USERNAME=${WERSS_USERNAME:-admin}
-      - WERSS_PASSWORD=${WERSS_PASSWORD:-admin123}
-      - BROWSER_TYPE=${BROWSER_TYPE:-firefox}
-      - MINIO_ENDPOINT=minio:9000
-      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-admin}
-      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-admin123}
-      - MINIO_SECURE=False
-    ports:
-      - "8001:8001"
     volumes:
       - ./data/werss-data-dev:/app/data
-      - ./logs:/app/logs
-    depends_on:
-      postgres:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-    networks:
-      - werss_network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-
-networks:
-  werss_network:
-    driver: bridge
-    name: werss_network

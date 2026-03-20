@@ -17,9 +17,9 @@
 - AI 限流可加 --sleep 0.3；大批量可配合 --offset 分批续跑。
 - 仍连不上库时检查 DB / POSTGRES_*，勿落到 sqlite。
 
-在 **deepling.tech 仓库根目录** 的 `.env` 里配置 `POSTGRES_*`（与 docker-compose 一致）或 `DB`；
-本脚本会先加载 `werss/.env`，再加载上一级目录的 `.env`。**无 config.yaml 时务必传 `--db-url` 或导出 `DB`，**
-否则旧逻辑会误连 SQLite。建议：`cp config.example.yaml config.yaml` 后再按需改 `db` 占位符。
+在项目根目录的 `.env` 里配置 `DB`（推荐）或 `POSTGRES_*`（与 docker-compose 一致）；
+**无 config.yaml 时务必传 `--db-url` 或导出 `DB`，**否则旧逻辑会误连 SQLite。
+建议：`cp config.example.yaml config.yaml` 后再按需改 `db` 占位符。
 """
 from __future__ import annotations
 
@@ -35,7 +35,6 @@ try:
     os.chdir(project_root)
 except OSError:
     pass
-_monorepo_env = os.path.abspath(os.path.join(project_root, "..", ".env"))
 _werss_env = os.path.join(project_root, ".env")
 
 
@@ -59,12 +58,11 @@ def _bootstrap_db_env() -> None:
     except ImportError:
         load_dotenv = None  # type: ignore
     if load_dotenv:
-        for path in (_werss_env, _monorepo_env):
-            if os.path.isfile(path):
-                load_dotenv(path, override=False)
+        if os.path.isfile(_werss_env):
+            load_dotenv(_werss_env, override=False)
     if os.getenv("DB"):
         return
-    postgres_user = os.getenv("POSTGRES_USER", "deepling_user")
+    postgres_user = os.getenv("POSTGRES_USER", "admin")
     postgres_password = os.getenv("POSTGRES_PASSWORD", "")
     postgres_db = os.getenv("POSTGRES_WERSS_DB") or os.getenv("POSTGRES_DB", "werss_db")
     postgres_host = os.getenv("POSTGRES_HOST", "localhost")

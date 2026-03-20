@@ -26,7 +26,6 @@ try:
     os.chdir(project_root)
 except OSError:
     pass
-_monorepo_env = os.path.abspath(os.path.join(project_root, "..", ".env"))
 _werss_env = os.path.join(project_root, ".env")
 
 
@@ -49,11 +48,10 @@ def _bootstrap_db_env() -> None:
         load_dotenv = None  # type: ignore
     try:
         if load_dotenv:
-            for path in (_werss_env, _monorepo_env):
-                if os.path.isfile(path):
-                    load_dotenv(path, override=False)
+            if os.path.isfile(_werss_env):
+                load_dotenv(_werss_env, override=False)
         if not os.getenv("DB"):
-            postgres_user = os.getenv("POSTGRES_USER", "deepling_user")
+            postgres_user = os.getenv("POSTGRES_USER", "admin")
             postgres_password = os.getenv("POSTGRES_PASSWORD", "")
             postgres_db = os.getenv("POSTGRES_WERSS_DB") or os.getenv("POSTGRES_DB", "werss_db")
             postgres_host = os.getenv("POSTGRES_HOST", "localhost")
