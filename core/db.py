@@ -27,8 +27,14 @@ class Db:
         self.User_In_Thread=User_In_Thread
         self.tag=tag
         print_success(f"[{tag}]连接初始化")
-        # 获取数据库连接字符串，如果为 None 则使用默认值
-        db_config = cfg.get("db") or "sqlite:///data/db.db"
+        # 优先使用环境变量 DB（CLI/--db-url、Docker 注入），避免无 config.yaml 时误落 sqlite
+        db_config = (os.getenv("DB") or "").strip()
+        if not db_config:
+            db_config = cfg.get("db", default=None, silent=True)
+        if not db_config:
+            db_config = "sqlite:///data/db.db"
+        if isinstance(db_config, str) and db_config.startswith("postgres://"):
+            db_config = "postgresql://" + db_config[len("postgres://") :]
         if isinstance(db_config, str):
             self.init(db_config)
         else:

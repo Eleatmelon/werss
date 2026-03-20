@@ -22,6 +22,10 @@ from typing import Optional
 # 添加项目根目录到路径
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
+try:
+    os.chdir(project_root)
+except OSError:
+    pass
 _monorepo_env = os.path.abspath(os.path.join(project_root, "..", ".env"))
 _werss_env = os.path.join(project_root, ".env")
 
@@ -457,7 +461,7 @@ def main():
         DB.init(args.db_url)
     
     # 显示配置信息
-    extract_method = cfg.get("article_tag.extract_method", "textrank")
+    extract_method = cfg.get("article_tag.extract_method", "ai", silent=True) or "ai"
     max_tags = cfg.get("article_tag.max_tags", 5)
     auto_extract = cfg.get("article_tag.auto_extract", False)
     

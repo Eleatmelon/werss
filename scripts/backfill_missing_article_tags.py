@@ -8,14 +8,18 @@
 
 用法：
     python scripts/backfill_missing_article_tags.py --dry-run
-    python scripts/backfill_missing_article_tags.py --limit 50
-    python scripts/backfill_missing_article_tags.py --yes
+    python scripts/backfill_missing_article_tags.py --limit 50 --yes
     python scripts/backfill_missing_article_tags.py --mp-id <公众号id>
     python scripts/backfill_missing_article_tags.py --db-url postgresql://user:pass@host:5432/werss_db
 
+积压很多篇时建议：
+- 默认按发布时间「从旧到新」处理（--order asc），避免长期只加 --limit 时永远只打到最新稿、老文章永远无标签。
+- AI 限流可加 --sleep 0.3；大批量可配合 --offset 分批续跑。
+- 仍连不上库时检查 DB / POSTGRES_*，勿落到 sqlite。
+
 在 **deepling.tech 仓库根目录** 的 `.env` 里配置 `POSTGRES_*`（与 docker-compose 一致）或 `DB`；
-本脚本会先加载 `werss/.env`，再加载上一级目录的 `.env`。须在导入 ORM 之前设置好 `DB`，否则会落到
-config.yaml 默认的 `sqlite:///data/db.db`。
+本脚本会先加载 `werss/.env`，再加载上一级目录的 `.env`。**无 config.yaml 时务必传 `--db-url` 或导出 `DB`，**
+否则旧逻辑会误连 SQLite。建议：`cp config.example.yaml config.yaml` 后再按需改 `db` 占位符。
 """
 from __future__ import annotations
 
@@ -23,9 +27,14 @@ import argparse
 import os
 import re
 import sys
+import time
 
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
+try:
+    os.chdir(project_root)
+except OSError:
+    pass
 _monorepo_env = os.path.abspath(os.path.join(project_root, "..", ".env"))
 _werss_env = os.path.join(project_root, ".env")
 
@@ -69,7 +78,7 @@ def _bootstrap_db_env() -> None:
 
 _bootstrap_db_env()
 
-from sqlalchemy import or_
+from sqlalchemy import exists, or_
 from sqlalchemy.orm import Session
 
 from core.config import cfg
@@ -95,11 +104,11 @@ _reinit_db_if_config_yaml_forced_sqlite()
 
 
 def _base_article_query(session: Session):
-    """未删除且有标题的文章，且 outerjoin 后无 article_tags 行。"""
+    """未删除且有标题的文章，且不存在任何 article_tags 行（NOT EXISTS，大表上通常比 outerjoin 更稳）。"""
+    no_tag_row = ~exists().where(ArticleTag.article_id == Article.id)
     return (
         session.query(Article)
-        .outerjoin(ArticleTag, Article.id == ArticleTag.article_id)
-        .filter(ArticleTag.id.is_(None))
+        .filter(no_tag_row)
         .filter(
             or_(
                 Article.status != DATA_STATUS.DELETED,
@@ -184,9 +193,33 @@ def backfill_one(
 def main() -> None:
     parser = argparse.ArgumentParser(description="为无标签文章自动补充标签")
     parser.add_argument("--limit", type=int, default=None, help="最多处理篇数（默认全部）")
+    parser.add_argument(
+        "--offset",
+        type=int,
+        default=0,
+        help="跳过前 N 篇（与排序一致，便于分批续跑）",
+    )
+    parser.add_argument(
+        "--order",
+        choices=("asc", "desc"),
+        default="asc",
+        help="按 publish_time 排序：asc=最旧优先（默认，适合清积压）；desc=最新优先",
+    )
+    parser.add_argument(
+        "--sleep",
+        type=float,
+        default=0.0,
+        help="每篇处理后休眠秒数（缓解 OpenAI 等 API 限流，如 0.2～0.5）",
+    )
     parser.add_argument("--mp-id", type=str, default=None, help="仅指定公众号 mp_id")
     parser.add_argument("--dry-run", action="store_true", help="不写库；用 savepoint 试跑提取并回滚")
     parser.add_argument("--batch-size", type=int, default=20, help="每处理多少篇提交一次")
+    parser.add_argument(
+        "--fail-log",
+        type=str,
+        default=None,
+        help="将失败文章的 id 追加写入该文件（便于对账与重试）",
+    )
     parser.add_argument(
         "--yes",
         action="store_true",
@@ -209,6 +242,11 @@ def main() -> None:
     print_info(f"数据库: {db_disp}")
     print_info(f"提取方式: {cfg.get('article_tag.extract_method', 'ai')}")
     print_info(f"max_tags: {cfg.get('article_tag.max_tags', 5)}")
+    print_info(f"排序: publish_time {args.order}（最旧优先可清历史积压）")
+    if args.offset:
+        print_info(f"offset: 跳过前 {args.offset} 篇")
+    if args.sleep > 0:
+        print_info(f"sleep: 每篇 {args.sleep}s")
     if args.dry_run:
         print_warning("dry-run：数据库不会被持久化修改")
     print_info("=" * 72)
@@ -221,7 +259,10 @@ def main() -> None:
         total = q.count()
         print_info(f"待补充（当前条件下无标签）: {total} 篇")
 
-        q = q.order_by(Article.publish_time.desc())
+        order_col = Article.publish_time.desc() if args.order == "desc" else Article.publish_time.asc()
+        q = q.order_by(order_col)
+        if args.offset:
+            q = q.offset(args.offset)
         if args.limit is not None:
             q = q.limit(args.limit)
         articles = q.all()
@@ -236,7 +277,8 @@ def main() -> None:
                 print_info("已取消")
                 return
 
-        ok = 0
+        tagged = 0
+        empty = 0
         fail = 0
         for i, article in enumerate(articles, 1):
             title_short = (article.title or "")[:56]
@@ -246,25 +288,48 @@ def main() -> None:
                 if result["errors"]:
                     fail += 1
                     print_error(f"  跳过: {result['errors']}")
+                    if args.fail_log:
+                        try:
+                            with open(args.fail_log, "a", encoding="utf-8") as fl:
+                                fl.write(f"{article.id}\t{result['errors']}\n")
+                        except OSError as e:
+                            print_warning(f"  写入 fail-log 失败: {e}")
+                elif result["new_tags"]:
+                    tagged += 1
+                    print_success(f"  标签: {', '.join(result['new_tags'][:8])}")
                 else:
-                    ok += 1
-                    if result["new_tags"]:
-                        print_success(f"  标签: {', '.join(result['new_tags'][:8])}")
-                    else:
-                        print_warning("  未得到标签（API/内容过短等）")
+                    empty += 1
+                    print_warning("  未得到标签（正文过短、抽取失败或未命中关键词等，可改 extract_method 或检查 API）")
+                    if args.fail_log:
+                        try:
+                            with open(args.fail_log, "a", encoding="utf-8") as fl:
+                                fl.write(f"{article.id}\tno_tags_extracted\n")
+                        except OSError as e:
+                            print_warning(f"  写入 fail-log 失败: {e}")
                 if not args.dry_run and i % args.batch_size == 0:
                     session.commit()
+                    session.expunge_all()
                     print_info(f"  已提交批次（{args.batch_size} 篇/批）")
             except Exception:
                 fail += 1
                 if not args.dry_run:
                     session.rollback()
+                if args.fail_log:
+                    try:
+                        with open(args.fail_log, "a", encoding="utf-8") as fl:
+                            fl.write(f"{article.id}\texception\n")
+                    except OSError:
+                        pass
+            if args.sleep > 0 and i < n:
+                time.sleep(args.sleep)
 
         if not args.dry_run:
             session.commit()
             print_success("已全部提交")
         print_info("-" * 72)
-        print_info(f"完成: 成功 {ok}, 失败/跳过 {fail}, 共 {n} 篇")
+        print_info(
+            f"完成: 已打标 {tagged} 篇, 无标签 {empty} 篇, 失败 {fail} 篇, 本轮共 {n} 篇"
+        )
     finally:
         session.close()
 

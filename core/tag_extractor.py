@@ -75,7 +75,14 @@ class TagExtractor:
         # - all-MiniLM-L6-v2（英文文档，更轻量级）
         # - minishlab/potion-multilingual-128M（第三方多语言模型，CPU友好）
         # 使用 get 方法，如果配置不存在会使用默认值（这是正常情况）
-        self.keybert_model_name = cfg.get("article_tag.keybert.model") or "paraphrase-multilingual-MiniLM-L12-v2"
+        self.keybert_model_name = (
+            cfg.get(
+                "article_tag.keybert.model",
+                "paraphrase-multilingual-MiniLM-L12-v2",
+                silent=True,
+            )
+            or "paraphrase-multilingual-MiniLM-L12-v2"
+        )
     
     def _get_custom_tags(self) -> List[str]:
         """
@@ -1312,15 +1319,24 @@ def get_tag_extractor() -> TagExtractor:
     if _global_extractor is None:
         _global_extractor = TagExtractor()
         
-        # 根据配置的提取方法输出相应的日志信息
-        extract_method = cfg.get("article_tag.extract_method", "textrank")
-        
+        # 与 db.py / config.example.yaml 一致：默认 ai，避免日志误报为 TextRank
+        extract_method = str(
+            cfg.get("article_tag.extract_method", "ai", silent=True) or "ai"
+        ).strip().lower()
+
         if extract_method == "ai" and _global_extractor.ai_client is not None:
-            logger.info("已创建全局 TagExtractor 实例，使用 AI 提取（OpenAI API）")
+            logger.info("已创建全局 TagExtractor 实例，使用 AI 提取（OpenAI 兼容 API）")
+        elif extract_method == "ai" and _global_extractor.ai_client is None:
+            logger.info(
+                "已创建全局 TagExtractor 实例，配置为 AI 但未检测到可用 API 客户端，"
+                "实际提取时将回退 TextRank/KeyBERT"
+            )
         elif extract_method == "keybert" and _global_extractor.keybert_available:
             logger.info("已创建全局 TagExtractor 实例，KeyBERT 模型将在首次使用时加载")
         else:
-            logger.info("已创建全局 TagExtractor 实例，使用 TextRank 提取")
+            logger.info(
+                f"已创建全局 TagExtractor 实例，extract_method={extract_method!r}，使用 TextRank 提取"
+            )
     else:
         # 如果实例已存在，但 AI 客户端未初始化，尝试重新初始化
         if AI_AVAILABLE and _global_extractor.ai_client is None:
