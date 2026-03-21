@@ -871,35 +871,48 @@ openai:
 
 ## 📚 API文档
 
-启动服务后，可以通过以下地址访问API文档：
+启动服务后，可以通过以下地址访问 API 文档（实际前缀以 `API_BASE` 为准，默认为 **`/api/v1/wx`**）：
 
-- **Swagger UI**: http://localhost:8001/api/docs
-- **ReDoc**: http://localhost:8001/api/redoc
-- **OpenAPI Schema**: http://localhost:8001/api/openapi.json
+- **Swagger UI**: http://localhost:8001/api/docs  
+- **ReDoc**: http://localhost:8001/api/redoc  
+- **OpenAPI Schema**: http://localhost:8001/api/openapi.json  
 
-### 主要API端点
+Swagger 首页说明中包含 **JWT** 与 **API Key**（`X-API-Key`）两种认证方式；OpenAPI 组件中已注册 `ApiKeyHeader`，便于对接方引用。
 
-#### 认证相关
-- `POST /api/auth/login` - 用户登录
-- `POST /api/auth/logout` - 用户登出
-- `GET /api/auth/me` - 获取当前用户信息
+**文章列表查询**（`GET`/`POST` `/api/v1/wx/articles`）支持：
 
-#### 公众号管理
-- `GET /api/mps` - 获取公众号列表
-- `POST /api/mps` - 添加公众号
-- `PUT /api/mps/{id}` - 更新公众号
-- `DELETE /api/mps/{id}` - 删除公众号
+- 分页：`offset`、`limit`
+- 标题搜索：`search`（多词 OR）
+- 公众号：`mp_id`
+- 发布时间：`publish_from` / `publish_to`（秒或毫秒，与库内 `publish_time` 一致），或日历日 `publish_date_from` / `publish_date_to`（`YYYY-MM-DD`，UTC）
+- 标签：`tag_id`、`tag_ids`（逗号分隔）、`tag_match`=`any`|`all`
 
-#### 文章管理
-- `GET /api/articles` - 获取文章列表
-- `GET /api/articles/{id}` - 获取文章详情
-- `DELETE /api/articles/{id}` - 删除文章
+更细的字段说明与 `curl` 示例见 **[docs/ARTICLE_QUERY_API.md](docs/ARTICLE_QUERY_API.md)**。
 
-#### RSS订阅
-- `GET /feeds/{mp_id}.xml` - 获取公众号RSS订阅源
-- `GET /feeds/all.xml` - 获取所有文章RSS订阅源
+### 主要 API 端点（节选）
 
-更多API详情请查看Swagger文档。
+#### 认证
+- `POST /api/v1/wx/auth/token` - OAuth2 密码模式获取 JWT
+- `POST /api/v1/wx/auth/login` - 用户登录（表单）
+- `GET /api/v1/wx/auth/verify` - 校验 Token
+
+#### API Key（需先登录创建）
+- `GET/POST /api/v1/wx/api-keys` - 列表 / 创建
+- `POST /api/v1/wx/api-keys/{id}/regenerate` - 轮换密钥
+
+#### 公众号
+- `GET /api/v1/wx/mps` - 公众号列表（`kw`、`limit`、`offset`）
+- `GET /api/v1/wx/mps/{mp_id}` - 详情（可匿名，见 Swagger）
+
+#### 文章
+- `GET`/`POST` `/api/v1/wx/articles` - 文章列表（见上文筛选参数）
+- `GET /api/v1/wx/articles/{id}` - 文章详情（可匿名）
+
+#### RSS / Feed（无 `/api/v1/wx` 前缀）
+- `GET /rss`、`GET /rss/{feed_id}` - RSS
+- `GET /feed/{feed_id}.xml` 等 - 订阅输出
+
+完整列表以 **Swagger** 为准。
 
 ---
 
@@ -1124,7 +1137,7 @@ chmod 755 data
 ### v1.1.0（2026-03-21）
 
 **采集稳定性**
-- 二维码登录存活时间延长并支持自动刷新，解决了每天都要重新扫码登录的问题
+- 二维码登录存活时间延长并支持自动刷新，但是由于微信限制每天还是要重新扫码登录。
 - 爬取间隔 `SPAN_INTERVAL` 默认从 10 调高到 30，降低被微信流控/封禁的风险
 - `MAX_PAGE` 默认从 5 调低到 3，减少单次连续请求时长
 - User-Agent 去除 `WeRss` 标识，改为模拟真实 Chrome 浏览器

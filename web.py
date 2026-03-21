@@ -27,6 +27,38 @@ from core.config import cfg,VERSION,API_BASE
 import threading
 from core.print import print_info, print_warning
 
+# OpenAPI / Swagger 顶层说明（支持 Markdown）
+_WERSS_OPENAPI_DESCRIPTION = f"""
+WeRSS：微信公众号聚合、采集与阅读。
+
+### 认证方式
+
+1. **JWT（OAuth2 密码模式）**  
+   - 调用 `{API_BASE}/auth/token`（`application/x-www-form-urlencoded`：`username`、`password`）获取 `access_token`  
+   - 请求头：`Authorization: Bearer <jwt>`
+
+2. **API Key**  
+   - 在 Web 端 **API Key 管理** 创建密钥（格式 `werss_...`）  
+   - 请求头：`X-API-Key: werss_你的密钥`  
+   - 或：`Authorization: Bearer werss_你的密钥`（不含 `.` 时按 API Key 解析）
+
+### 文章列表查询
+
+`GET` / `POST` **`{API_BASE}/articles`** 支持：
+
+| 参数 | 说明 |
+|------|------|
+| `offset`, `limit` | 分页 |
+| `search` | 标题关键词（多词 OR） |
+| `mp_id` | 公众号 |
+| `publish_from` / `publish_to` | 发布时间戳（&lt;10¹² 视为秒，否则毫秒） |
+| `publish_date_from` / `publish_date_to` | `YYYY-MM-DD`（UTC 日历日） |
+| `tag_id` / `tag_ids` | 标签 ID，`tag_ids` 逗号分隔 |
+| `tag_match` | `any`（默认，任一标签）或 `all`（同时包含全部） |
+
+更完整的字段说明见仓库 **`docs/ARTICLE_QUERY_API.md`**。
+"""
+
 # 全局变量：标记定时任务是否已启动
 _task_thread_started = False
 _task_thread = None
@@ -74,7 +106,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="WeRSS API",
-    description="微信公众号热度分析系统API文档",
+    description=_WERSS_OPENAPI_DESCRIPTION.strip(),
     version="1.0.0",
     docs_url="/api/docs",  # 指定文档路径
     redoc_url="/api/redoc",  # 指定Redoc路径
@@ -84,14 +116,50 @@ app = FastAPI(
     openapi_tags=[
         {
             "name": "认证",
-            "description": "用户认证相关接口",
-        }
+            "description": "登录、Token、扫码绑定微信公众平台等",
+        },
+        {
+            "name": "文章管理",
+            "description": "文章列表（支持时间范围、标签筛选）、详情与维护",
+        },
+        {
+            "name": "API Key 管理",
+            "description": "API Key 的创建、轮换与调用日志（需登录）",
+        },
     ],
     swagger_ui_parameters={
         "persistAuthorization": True,
         "withCredentials": True,
-    }
+    },
 )
+
+
+def custom_openapi():
+    """合并 OpenAPI：补充 API Key 安全方案，便于 Swagger 中展示。"""
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    components = openapi_schema.setdefault("components", {})
+    schemes = components.setdefault("securitySchemes", {})
+    schemes.setdefault(
+        "ApiKeyHeader",
+        {
+            "type": "apiKey",
+            "in": "header",
+            "name": "X-API-Key",
+            "description": "WeRSS API Key（`werss_` 前缀）。与 JWT 二选一即可访问需登录接口。",
+        },
+    )
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi  # type: ignore[method-assign]
 
 # CORS配置
 app.add_middleware(

@@ -38,6 +38,21 @@ export interface ArticleListParams {
   search?: string
   status?: number | string
   mp_id?: string
+  /** 发布时间下界（秒或毫秒，与后端 publish_from 一致） */
+  publish_from?: number
+  /** 发布时间上界（秒或毫秒） */
+  publish_to?: number
+  /** YYYY-MM-DD，UTC 日历日起 */
+  publish_date_from?: string
+  /** YYYY-MM-DD，UTC 日历日止 */
+  publish_date_to?: string
+  /** 单个标签 ID */
+  tag_id?: string
+  /** 多个标签 ID，逗号分隔 */
+  tag_ids?: string
+  /** any=任一标签；all=同时包含全部 */
+  tag_match?: 'any' | 'all'
+  has_content?: boolean
 }
 
 /**
@@ -60,13 +75,26 @@ export interface ArticleListResult {
  */
 export const getArticles = (params: ArticleListParams) => {
   // 转换分页参数
-  const apiParams = {
+  const apiParams: Record<string, unknown> = {
     offset: (params.page || 0) * (params.pageSize || 10),
     limit: params.pageSize || 10,
     search: params.search,
     status: params.status,
-    mp_id: params.mp_id
+    mp_id: params.mp_id,
+    publish_from: params.publish_from,
+    publish_to: params.publish_to,
+    publish_date_from: params.publish_date_from,
+    publish_date_to: params.publish_date_to,
+    tag_id: params.tag_id,
+    tag_ids: params.tag_ids,
+    tag_match: params.tag_match,
+    has_content: params.has_content
   }
+  Object.keys(apiParams).forEach((k) => {
+    if (apiParams[k] === undefined || apiParams[k] === '') {
+      delete apiParams[k]
+    }
+  })
   return http.get<ArticleListResult>('/wx/articles', { 
     params: apiParams 
   })

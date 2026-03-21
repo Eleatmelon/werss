@@ -1,17 +1,94 @@
 from fastapi import APIRouter, Depends, HTTPException, status as fast_status, Query, Body
 from pydantic import BaseModel, Field
+from enum import Enum
+from datetime import datetime, timedelta, timezone
 from core.auth import get_current_user
 from core.db import DB
 from core.models.base import DATA_STATUS
 from core.models.article import Article,ArticleBase
-from sqlalchemy import and_, or_, desc
+from sqlalchemy import and_, or_, desc, func, distinct
 from .base import success_response, error_response
 from core.config import cfg
 from apis.base import format_search_kw
 from core.print import print_warning, print_info, print_error, print_success
+from core.log import logger
 from core.cache import get_cache, set_cache, get_cache_key, clear_cache_pattern
-from typing import Optional
+from typing import Optional, List, Tuple
 router = APIRouter(prefix=f"/articles", tags=["文章管理"])
+
+
+def _normalize_publish_ts(ts: Optional[int]) -> Optional[int]:
+    """将查询参数中的时间统一为与库表一致的毫秒时间戳。"""
+    if ts is None:
+        return None
+    try:
+        v = int(ts)
+    except (TypeError, ValueError):
+        return None
+    # 与项目内其它逻辑一致：小于 10^10 视为秒
+    if v < 10_000_000_000:
+        return v * 1000
+    return v
+
+
+def _parse_tag_id_list(tag_id: Optional[str], tag_ids: Optional[str]) -> List[str]:
+    out: List[str] = []
+    if tag_id and str(tag_id).strip():
+        out.append(str(tag_id).strip())
+    if tag_ids and str(tag_ids).strip():
+        for part in str(tag_ids).split(","):
+            p = part.strip()
+            if p:
+                out.append(p)
+    # 去重且保序
+    return list(dict.fromkeys(out))
+
+
+def _merge_time_bounds(
+    publish_from: Optional[int],
+    publish_to: Optional[int],
+    date_from: Optional[str],
+    date_to: Optional[str],
+) -> Tuple[Optional[int], Optional[int]]:
+    """
+    合并时间戳参数与 YYYY-MM-DD 日期参数，取更严格的区间。
+    返回 (下界毫秒含, 上界毫秒含)。
+    """
+    pf = _normalize_publish_ts(publish_from)
+    pt = _normalize_publish_ts(publish_to)
+
+    df_ms: Optional[int] = None
+    dt_ms: Optional[int] = None
+    if date_from and str(date_from).strip():
+        try:
+            d = datetime.strptime(str(date_from).strip(), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            df_ms = int(d.timestamp() * 1000)
+        except ValueError:
+            pass
+    if date_to and str(date_to).strip():
+        try:
+            d = datetime.strptime(str(date_to).strip(), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            end = d + timedelta(days=1) - timedelta(milliseconds=1)
+            dt_ms = int(end.timestamp() * 1000)
+        except ValueError:
+            pass
+
+    low = pf
+    if df_ms is not None:
+        low = df_ms if low is None else max(low, df_ms)
+
+    high = pt
+    if dt_ms is not None:
+        high = dt_ms if high is None else min(high, dt_ms)
+
+    return low, high
+
+
+class TagMatchMode(str, Enum):
+    """标签匹配：任一 / 全部"""
+
+    any = "any"
+    all = "all"
 
 
     
@@ -71,34 +148,81 @@ async def clean_duplicate(
         )
 
 
-@router.api_route("", summary="获取文章列表",methods= ["GET", "POST"], operation_id="get_articles_list")
+@router.api_route(
+    "",
+    summary="获取文章列表",
+    methods=["GET", "POST"],
+    operation_id="get_articles_list",
+    openapi_extra={
+        "description": (
+            "支持分页、标题搜索、公众号、状态、是否含正文；"
+            "可选 **发布时间范围**（时间戳或 UTC 日期）、**标签筛选**（任一/全部）。"
+            "认证：JWT 或 `X-API-Key`。"
+        )
+    },
+)
 async def get_articles(
-    offset: int = Query(0, ge=0),
-    limit: int = Query(5, ge=1, le=100),
-    status: str = Query(None),
-    search: str = Query(None),
-    mp_id: str = Query(None),
-    has_content:bool=Query(False),
-    current_user: dict = Depends(get_current_user)
+    offset: int = Query(0, ge=0, description="分页偏移，从 0 开始"),
+    limit: int = Query(5, ge=1, le=100, description="每页条数，最大 100"),
+    status: Optional[str] = Query(None, description="按状态精确筛选；不传则排除已删除文章"),
+    search: Optional[str] = Query(None, description="标题关键词，空格/|/- 拆成多词，满足任一词即匹配"),
+    mp_id: Optional[str] = Query(None, description="仅返回指定公众号 mp_id 的文章"),
+    has_content: bool = Query(False, description="true 时只查含正文 content 的记录"),
+    publish_from: Optional[int] = Query(
+        None,
+        description="发布时间下界（含）。数值 < 10^12 视为秒，否则为毫秒",
+    ),
+    publish_to: Optional[int] = Query(
+        None,
+        description="发布时间上界（含）。数值 < 10^12 视为秒，否则为毫秒",
+    ),
+    publish_date_from: Optional[str] = Query(
+        None,
+        description="发布日期起始 YYYY-MM-DD（UTC 日界线，含当日 0 点）",
+        examples=["2026-01-01"],
+    ),
+    publish_date_to: Optional[str] = Query(
+        None,
+        description="发布日期结束 YYYY-MM-DD（UTC，含当日结束）",
+        examples=["2026-03-20"],
+    ),
+    tag_id: Optional[str] = Query(None, description="单个标签 ID（与 tags 接口返回的 id 一致）"),
+    tag_ids: Optional[str] = Query(
+        None,
+        description="多个标签 ID，逗号分隔；可与 tag_id 同时使用，会去重合并",
+    ),
+    tag_match: TagMatchMode = Query(
+        TagMatchMode.any,
+        description="any=命中任一标签；all=必须同时包含所列全部标签",
+    ),
+    current_user: dict = Depends(get_current_user),
 ):
-    # 生成缓存键
-    cache_key = f"articles:{get_cache_key(offset, limit, status, mp_id, search, has_content)}"
-    
+    resolved_tags = _parse_tag_id_list(tag_id, tag_ids)
+    time_low, time_high = _merge_time_bounds(
+        publish_from, publish_to, publish_date_from, publish_date_to
+    )
+    if time_low is not None and time_high is not None and time_low > time_high:
+        from .base import success_response
+        return success_response({"list": [], "total": 0})
+
+    # 生成缓存键（含新增筛选条件）
+    cache_key = f"articles:{get_cache_key(offset, limit, status, mp_id, search, has_content, time_low, time_high, resolved_tags, tag_match.value)}"
+
     # 尝试从缓存获取
     cached_result = get_cache(cache_key)
     if cached_result is not None:
         return cached_result
-    
+
     session = DB.get_session()
     try:
-      
-        
+        from core.models.article_tags import ArticleTag
+
         # 构建查询条件
         # 统一使用 ArticleBase 进行查询（包含 status 字段）
         query = session.query(ArticleBase)
         if has_content:
             query = session.query(Article)
-        
+
         # 默认过滤已删除的文章（除非明确指定 status 参数）
         if status:
             # 如果指定了 status，按指定状态过滤（包括已删除状态）
@@ -114,28 +238,56 @@ async def get_articles(
             query = query.filter(
                format_search_kw(search)
             )
-        
+
+        if time_low is not None:
+            query = query.filter(ArticleBase.publish_time >= time_low)
+        if time_high is not None:
+            query = query.filter(ArticleBase.publish_time <= time_high)
+
+        if resolved_tags:
+            if tag_match == TagMatchMode.all:
+                n = len(resolved_tags)
+                subq = (
+                    session.query(ArticleTag.article_id)
+                    .filter(ArticleTag.tag_id.in_(resolved_tags))
+                    .group_by(ArticleTag.article_id)
+                    .having(func.count(distinct(ArticleTag.tag_id)) == n)
+                )
+                query = query.filter(ArticleBase.id.in_(subq))
+            else:
+                subq = (
+                    session.query(ArticleTag.article_id)
+                    .filter(ArticleTag.tag_id.in_(resolved_tags))
+                    .distinct()
+                )
+                query = query.filter(ArticleBase.id.in_(subq))
+
         # 获取总数
         total = query.count()
-        query= query.order_by(ArticleBase.publish_time.desc()).offset(offset).limit(limit)
-        # query= query.order_by(Article.id.desc()).offset(offset).limit(limit)
+        query = query.order_by(ArticleBase.publish_time.desc()).offset(offset).limit(limit)
         # 分页查询（按发布时间降序）
         articles = query.all()
-        
-        # 打印生成的 SQL 语句（包含分页参数）
-        print_warning(query.statement.compile(compile_kwargs={"literal_binds": True}))
+
+        try:
+            logger.debug(
+                "articles list SQL: %s",
+                str(query.statement.compile(compile_kwargs={"literal_binds": True})),
+            )
+        except Exception:
+            pass
         
         if not articles:
             # 如果没有文章，直接返回空列表
             from .base import success_response
-            return success_response({
+            empty_result = success_response({
                 "list": [],
                 "total": total
             })
+            set_cache(cache_key, empty_result, ttl=300)
+            return empty_result
                        
         # 批量查询优化：一次性获取所有需要的数据
         from core.models.feed import Feed
-        from core.models.article_tags import ArticleTag
         from core.models.tags import Tags as TagsModel
         
         # 1. 批量查询公众号信息
