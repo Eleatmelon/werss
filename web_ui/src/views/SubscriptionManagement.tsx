@@ -111,11 +111,58 @@ const SubscriptionManagement: React.FC = () => {
   }
 
   // 刷新订阅（更新文章）
-  const handleRefresh = async () => {
+  const handleDefaultRefresh = async () => {
     if (!selectedSubscription) {
       Message.warning(t('subscriptions.messages.selectFirst'))
       return
     }
+    setRefreshing(true)
+    try {
+      await UpdateMps(selectedSubscription.mp_id)
+      Message.success(t('subscriptions.messages.refreshSuccess'))
+      setTimeout(() => {
+        loadSubscriptions()
+      }, 2000)
+    } catch (error: any) {
+      console.error('刷新失败:', error)
+      let errorData: any = null
+
+      if (typeof error === 'string') {
+        Message.error(error || t('subscriptions.messages.refreshFailed'))
+        return
+      }
+
+      if (error && typeof error === 'object' && 'code' in error) {
+        errorData = error
+      } else if (error?.response?.data) {
+        errorData = error.response.data.detail || error.response.data
+      } else {
+        errorData = error
+      }
+
+      if (errorData?.code === 40402) {
+        const timeSpan = errorData?.data?.time_span || 0
+        const syncInterval = 60
+        const remaining = Math.max(0, syncInterval - timeSpan)
+        Message.warning(t('subscriptions.messages.refreshLimit', { seconds: remaining }))
+      } else {
+        const errorMsg = errorData?.message || error?.message || t('subscriptions.messages.refreshFailed')
+        Message.error(errorMsg)
+      }
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  const handleRangeRefresh = async () => {
+    if (!selectedSubscription) {
+      Message.warning(t('subscriptions.messages.selectFirst'))
+      return
+    }
+    refreshForm.reset({
+      startPage: 1,
+      endPage: 1
+    })
     setRefreshModalOpen(true)
   }
 
@@ -440,7 +487,7 @@ const SubscriptionManagement: React.FC = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={handleRefresh}
+                      onClick={handleDefaultRefresh}
                       disabled={refreshing}
                     >
                       {refreshing ? (
@@ -448,7 +495,15 @@ const SubscriptionManagement: React.FC = () => {
                       ) : (
                         <RefreshCw className="h-4 w-4 mr-2" />
                       )}
-                      {t('subscriptions.refresh')}
+                      默认刷新
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRangeRefresh}
+                      disabled={refreshing}
+                    >
+                      范围刷新
                     </Button>
                     <Button
                       variant="outline"
