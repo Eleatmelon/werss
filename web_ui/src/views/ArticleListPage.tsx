@@ -35,6 +35,7 @@ const ArticleListPage: React.FC = () => {
   const [articleModalVisible, setArticleModalVisible] = useState(false)
   const [currentArticle, setCurrentArticle] = useState<Article | null>(null)
   const [fetchingContent, setFetchingContent] = useState(false)
+  const [refreshingArticleId, setRefreshingArticleId] = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteTargetId, setDeleteTargetId] = useState<string | number | null>(null)
   const [batchDeleteDialogOpen, setBatchDeleteDialogOpen] = useState(false)
@@ -144,6 +145,45 @@ const ArticleListPage: React.FC = () => {
       }
     } catch (error) {
       console.error('获取文章详情失败:', error)
+    }
+  }
+
+  const refreshArticleContent = async (article: Article, refreshDetail: boolean = false) => {
+    const articleId = String(article.id)
+    setRefreshingArticleId(articleId)
+    if (refreshDetail) {
+      setFetchingContent(true)
+    }
+
+    try {
+      const result = await fetchArticleContent(article.id)
+      const responseData = (result as any)?.data || result
+      toast({
+        title: "成功",
+        description: responseData?.tag_backfilled ? "内容和关键词已更新" : "内容抓取完成"
+      })
+
+      loadArticles()
+
+      if (refreshDetail) {
+        const res = await getArticleDetail(article.id, 0)
+        if ((res as any).data?.data) {
+          setCurrentArticle(normalizeArticle((res as any).data.data))
+        } else if ((res as any).data) {
+          setCurrentArticle(normalizeArticle((res as any).data))
+        }
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "错误",
+        description: error?.response?.data?.detail?.message || error?.message || '获取内容失败'
+      })
+    } finally {
+      setRefreshingArticleId(null)
+      if (refreshDetail) {
+        setFetchingContent(false)
+      }
     }
   }
 
@@ -524,6 +564,19 @@ const ArticleListPage: React.FC = () => {
                               <Button
                                 variant="ghost"
                                 size="sm"
+                                onClick={() => refreshArticleContent(article)}
+                                title="手动抓取更新"
+                                disabled={refreshingArticleId === String(article.id)}
+                              >
+                                {refreshingArticleId === String(article.id) ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Wifi className="h-4 w-4" />
+                                )}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
                                 onClick={() => handleEdit(article)}
                                 title="编辑"
                               >
@@ -681,45 +734,15 @@ const ArticleListPage: React.FC = () => {
           <div className="px-4 pb-4 overflow-y-auto flex-1">
             {currentArticle && (
               <>
-                {(!currentArticle.content || currentArticle.content.trim() === '' || currentArticle.content === '暂无内容') && (
-                  <div className="mb-4">
-                    <Button
-                      onClick={async () => {
-                        if (!currentArticle) return
-                        setFetchingContent(true)
-                        try {
-                          await fetchArticleContent(currentArticle.id)
-                          toast({
-                            title: "成功",
-                            description: "正在重新获取内容，请稍后刷新查看"
-                          })
-                          setTimeout(async () => {
-                            try {
-                              const res = await getArticleDetail(currentArticle.id, 0)
-                              if ((res as any).data?.data) {
-                                setCurrentArticle(normalizeArticle((res as any).data.data))
-                              }
-                            } catch (error) {
-                              console.error('刷新文章详情失败:', error)
-                            }
-                          }, 2000)
-                        } catch (error: any) {
-                          toast({
-                            variant: "destructive",
-                            title: "错误",
-                            description: error?.response?.data?.detail?.message || error?.message || '获取内容失败'
-                          })
-                        } finally {
-                          setFetchingContent(false)
-                        }
-                      }}
-                      disabled={fetchingContent}
-                    >
-                      {fetchingContent && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                      重新获取内容
-                    </Button>
-                  </div>
-                )}
+                <div className="mb-4">
+                  <Button
+                    onClick={() => refreshArticleContent(currentArticle, true)}
+                    disabled={fetchingContent}
+                  >
+                    {fetchingContent && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    手动抓取更新
+                  </Button>
+                </div>
                 <div
                   dangerouslySetInnerHTML={{ __html: currentArticle.content || '暂无内容 没有成功读到内容' }}
                   className="prose prose-sm max-w-none leading-relaxed"

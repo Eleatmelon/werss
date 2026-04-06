@@ -710,6 +710,28 @@ async def fetch_article_content(
             
             # 更新内容
             article.content = content
+            article.updated_at = datetime.now()
+            tag_backfilled = False
+
+            try:
+                from core.models.article_tags import ArticleTag
+
+                has_tags = session.query(ArticleTag.id).filter(
+                    ArticleTag.article_id == article.id
+                ).first() is not None
+
+                if not has_tags:
+                    DB._assign_tags_by_extraction(
+                        session,
+                        article.id,
+                        article.title or "",
+                        getattr(article, "description", "") or "",
+                        article.content or ""
+                    )
+                    tag_backfilled = True
+            except Exception as tag_error:
+                print_warning(f"重新获取内容后补提关键词失败: {tag_error}")
+
             session.commit()
             print_success(f"成功更新文章 {article.title} 的内容")
             
@@ -718,7 +740,8 @@ async def fetch_article_content(
             
             return success_response({
                 "message": "内容获取成功",
-                "content_length": len(content)
+                "content_length": len(content),
+                "tag_backfilled": tag_backfilled
             })
         else:
             raise HTTPException(

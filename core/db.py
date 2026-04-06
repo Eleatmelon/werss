@@ -401,9 +401,52 @@ class Db:
                     print_warning(f"Article already exists: {article_id}")
                     return False
                 else:
-                    # 如果已存在但不要求检查，可以选择更新或跳过
-                    # 这里选择跳过，避免重复插入
-                    print_info(f"Article already exists, skipping: {article_id}")
+                    # 已存在文章做最小补录：补正文、补基础字段、补缺失标签，但不算新增文章
+                    try:
+                        from core.models.article_tags import ArticleTag
+
+                        updated_existing_article = False
+                        incoming_content = getattr(art, 'content', '') or ''
+                        existing_content = getattr(existing_article, 'content', '') or ''
+
+                        if incoming_content.strip() and not existing_content.strip():
+                            existing_article.content = incoming_content
+                            updated_existing_article = True
+
+                        for field_name in ('title', 'description', 'url', 'pic_url', 'publish_time'):
+                            incoming_value = getattr(art, field_name, None)
+                            current_value = getattr(existing_article, field_name, None)
+                            if incoming_value and not current_value:
+                                setattr(existing_article, field_name, incoming_value)
+                                updated_existing_article = True
+
+                        has_tags = session.query(ArticleTag.id).filter(
+                            ArticleTag.article_id == article_id
+                        ).first() is not None
+
+                        if updated_existing_article:
+                            existing_article.updated_at = datetime.now()
+                            session.flush()
+
+                        if not has_tags:
+                            print_info(f"文章已存在但缺少关键词/标签，尝试补录: {article_id}")
+                            self._assign_tags_by_extraction(
+                                session,
+                                article_id,
+                                getattr(existing_article, 'title', '') or getattr(art, 'title', '') or '',
+                                getattr(existing_article, 'description', '') or getattr(art, 'description', '') or '',
+                                getattr(existing_article, 'content', '') or incoming_content
+                            )
+                            updated_existing_article = True
+
+                        if updated_existing_article:
+                            session.commit()
+                            print_info(f"Article already exists, backfilled missing fields/tags: {article_id}")
+                        else:
+                            print_info(f"Article already exists, skipping: {article_id}")
+                    except Exception as existing_fix_error:
+                        session.rollback()
+                        print_warning(f"补录已存在文章失败，保持原样跳过: {article_id}, error: {existing_fix_error}")
                     return False
                 
             created_at = getattr(art, 'created_at', None)
