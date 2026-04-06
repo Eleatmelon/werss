@@ -273,6 +273,7 @@ class WXArticleFetcher:
                 "title": "",
                 "publish_time": "",
                 "content": "",
+                "error": "",
                 "images": "",
                 "mp_info":{
                 "mp_name":"",   
@@ -287,6 +288,7 @@ class WXArticleFetcher:
         self.controller.open_url(url)
         page = self.page
         content=""
+        body = ""
         
         try:
             # 等待页面加载
@@ -414,6 +416,7 @@ class WXArticleFetcher:
                 info["topic_image"]=topic_image
 
         except Exception as e:
+            info["error"] = str(e)
             print_error(f"文章内容获取失败: {str(e)}")
             print_warning(f"页面内容预览: {body[:50]}...")
             # raise e

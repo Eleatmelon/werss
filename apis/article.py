@@ -688,12 +688,15 @@ async def fetch_article_content(
         import time
         
         content = None
+        fetch_error = None
         if cfg.get("gather.content_mode", "web") == "web":
             # 使用 Web 模式（Playwright）
             try:
                 result = Web.get_article_content(url)
                 content = result.get("content") if result else None
+                fetch_error = result.get("error") if result else None
             except Exception as e:
+                fetch_error = str(e)
                 print_error(f"Web模式获取内容失败: {e}")
         else:
             # 使用 API 模式
@@ -701,6 +704,7 @@ async def fetch_article_content(
                 ga = WxGather().Model()
                 content = ga.content_extract(url)
             except Exception as e:
+                fetch_error = str(e)
                 print_error(f"API模式获取内容失败: {e}")
         
         if content:
@@ -758,7 +762,7 @@ async def fetch_article_content(
                 status_code=fast_status.HTTP_406_NOT_ACCEPTABLE,
                 detail=error_response(
                     code=50002,
-                    message="获取文章内容失败，请稍后重试"
+                    message=fetch_error or "获取文章内容失败，请稍后重试"
                 )
             )
             
