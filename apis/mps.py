@@ -18,6 +18,7 @@ from core.config import cfg
 from core.res import save_avatar_locally
 import io
 import os
+from typing import Optional
 from jobs.article import UpdateArticle
 from driver.wxarticle import WXArticleFetcher
 from sqlalchemy import func, case
@@ -151,12 +152,22 @@ async def get_mps(
 @router.get("/update/{mp_id}", summary="更新公众号文章")
 async def update_mps(
      mp_id: str,
-     start_page: int = 0,
-     end_page: int = 1,
+     start_page: Optional[int] = None,
+     end_page: Optional[int] = None,
     current_user: dict = Depends(get_current_user)
 ):
     session = DB.get_session()
     try:
+        effective_start_page = max(0, int(start_page)) if start_page is not None else 0
+        if end_page is None:
+            default_max_page = cfg.get("max_page", 1)
+            try:
+                effective_end_page = max(1, int(default_max_page))
+            except (TypeError, ValueError):
+                effective_end_page = 1
+        else:
+            effective_end_page = max(effective_start_page + 1, int(end_page))
+
         from core.models.feed import Feed
         mp = session.query(Feed).filter(Feed.id == mp_id).first()
         if not mp:
@@ -184,7 +195,14 @@ async def update_mps(
             try:
                 from core.wx import WxGather
                 wx=WxGather().Model()
-                wx.get_Articles(mp.faker_id,Mps_id=mp.id,Mps_title=mp.mp_name,CallBack=UpdateArticle,start_page=start_page,MaxPage=end_page)
+                wx.get_Articles(
+                    mp.faker_id,
+                    Mps_id=mp.id,
+                    Mps_title=mp.mp_name,
+                    CallBack=UpdateArticle,
+                    start_page=effective_start_page,
+                    MaxPage=effective_end_page
+                )
                 # 使用锁保护共享数据
                 with lock:
                     if wx.articles:
