@@ -692,7 +692,7 @@ async def fetch_article_content(
         if cfg.get("gather.content_mode", "web") == "web":
             # 使用 Web 模式（Playwright）
             try:
-                result = Web.get_article_content(url)
+                result = await Web.async_get_article_content(url)
                 content = result.get("content") if result else None
                 fetch_error = result.get("error") if result else None
             except Exception as e:
