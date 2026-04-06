@@ -72,6 +72,17 @@ class WxGather:
             logger.warning(f"读取采集起始时间配置失败: {e}")
         # 默认值：2025-12-01
         return date(2025, 12, 1)
+    def get_max_consecutive_existing(self):
+        """获取连续命中已存在文章后的停止阈值。"""
+        raw_value = cfg.get("gather.max_consecutive_existing", 3)
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            logger.warning(f"连续已存在文章停止阈值配置无效: {raw_value}，使用默认值 3")
+            return 3
+        if value <= 0:
+            return None
+        return value
     def Model(self,type=None):
         type=type or cfg.get("gather.model","web")
         print(f"采集模式:{type}")

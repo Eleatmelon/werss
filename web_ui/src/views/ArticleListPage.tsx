@@ -49,6 +49,22 @@ const ArticleListPage: React.FC = () => {
   const exportModalRef = React.useRef<any>(null)
   const { toast } = useToast()
 
+  const processArticleContent = (content?: string) => {
+    return (content || '')
+      .replace(/<img([^>]*?)\sdata-src=(['"])([^'"]+)\2([^>]*?)>/gi, (_match, before, _quote, dataSrc, after) => {
+        if (/src=(['"])[^'"]*\1/i.test(`${before}${after}`)) {
+          return `<img${before}${after}>`
+        }
+        return `<img${before} src="${dataSrc}"${after}>`
+      })
+      .replace(/<img([^>]*)width=["'][^"']*["']([^>]*)>/gi, '<img$1$2>')
+  }
+
+  const normalizeArticle = (article: Article) => ({
+    ...article,
+    content: processArticleContent(article.content)
+  })
+
   // 加载订阅列表（用于筛选）
   const loadMpList = async () => {
     try {
@@ -113,18 +129,18 @@ const ArticleListPage: React.FC = () => {
 
   // 查看文章
   const viewArticle = async (article: Article) => {
-    setCurrentArticle(article)
+    setCurrentArticle(normalizeArticle(article))
     setArticleModalVisible(true)
     
     try {
       const res = await getArticleDetail(article.id, 0)
       const articleData = (res as any)?.data || res
       if (articleData) {
-        setCurrentArticle({
+        setCurrentArticle(normalizeArticle({
           ...article,
           ...articleData,
           mp_name: articleData.mp_name || article.mp_name
-        })
+        }))
       }
     } catch (error) {
       console.error('获取文章详情失败:', error)
@@ -250,6 +266,16 @@ const ArticleListPage: React.FC = () => {
   }
 
   const totalPages = Math.ceil(pagination.total / pagination.pageSize)
+  const handleJumpPage = (rawValue: string) => {
+    const targetPage = parseInt(rawValue, 10)
+    if (Number.isNaN(targetPage)) {
+      return
+    }
+    setPagination(prev => ({
+      ...prev,
+      current: Math.min(totalPages, Math.max(1, targetPage))
+    }))
+  }
 
   return (
     <div className="p-6">
@@ -530,6 +556,14 @@ const ArticleListPage: React.FC = () => {
                   <Button
                     variant="outline"
                     size="sm"
+                    onClick={() => setPagination(prev => ({ ...prev, current: 1 }))}
+                    disabled={pagination.current === 1}
+                  >
+                    首页
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => setPagination(prev => ({ ...prev, current: Math.max(1, prev.current - 1) }))}
                     disabled={pagination.current === 1}
                   >
@@ -542,6 +576,39 @@ const ArticleListPage: React.FC = () => {
                     disabled={pagination.current === totalPages}
                   >
                     下一页
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPagination(prev => ({ ...prev, current: totalPages }))}
+                    disabled={pagination.current === totalPages}
+                  >
+                    末页
+                  </Button>
+                  <Input
+                    key={`${pagination.current}-${totalPages}`}
+                    type="number"
+                    min={1}
+                    max={totalPages}
+                    defaultValue={pagination.current}
+                    className="w-20 h-9"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleJumpPage((e.target as HTMLInputElement).value)
+                      }
+                    }}
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={(e) => {
+                      const input = e.currentTarget.previousElementSibling as HTMLInputElement | null
+                      if (input) {
+                        handleJumpPage(input.value)
+                      }
+                    }}
+                  >
+                    跳转
                   </Button>
                 </div>
               </div>
@@ -630,7 +697,7 @@ const ArticleListPage: React.FC = () => {
                             try {
                               const res = await getArticleDetail(currentArticle.id, 0)
                               if ((res as any).data?.data) {
-                                setCurrentArticle((res as any).data.data)
+                                setCurrentArticle(normalizeArticle((res as any).data.data))
                               }
                             } catch (error) {
                               console.error('刷新文章详情失败:', error)

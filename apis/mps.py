@@ -1,6 +1,7 @@
 import logging
 from logging import info
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Body, UploadFile, File
+from pydantic import BaseModel
 
 # 设置日志记录器
 logger = logging.getLogger(__name__)
@@ -26,6 +27,25 @@ router = APIRouter(prefix=f"/mps", tags=["公众号管理"])
 # UPDB=db.Db("数据抓取")
 # def UpdateArticle(art:dict):
 #             return UPDB.add_article(art)
+
+
+def _normalize_rss_limit(rss_limit):
+    if rss_limit is None:
+        return None
+    try:
+        value = int(rss_limit)
+    except (TypeError, ValueError):
+        return None
+    if value < 0:
+        return 0
+    return value
+
+
+class FeedUpdatePayload(BaseModel):
+    mp_name: str | None = None
+    mp_intro: str | None = None
+    status: int | bool | None = None
+    rss_limit: int | None = None
 
 
 @router.get("/search/{kw}", summary="搜索公众号")
@@ -102,6 +122,7 @@ async def get_mps(
                 "mp_cover": mp.mp_cover,
                 "mp_intro": mp.mp_intro,
                 "status": mp.status,
+                "rss_limit": mp.rss_limit,
                 "created_at": mp.created_at.isoformat() if mp.created_at else None,
                 "sync_time": mp.sync_time,
                 "article_count": article_stats.get(mp.id, {}).get("article_count", 0),
@@ -290,6 +311,7 @@ async def add_mp(
     mp_id: str = Body(None, max_length=255),
     avatar: str = Body(None, max_length=500),
     mp_intro: str = Body(None, max_length=255),
+    rss_limit: int = Body(None),
     current_user: dict = Depends(get_current_user)
 ):
     session = DB.get_session()
@@ -339,6 +361,7 @@ async def add_mp(
         
         # 检查公众号是否已存在
         existing_feed = session.query(Feed).filter(Feed.faker_id == mp_id).first()
+        normalized_rss_limit = _normalize_rss_limit(rss_limit)
         
         if existing_feed:
             # 更新现有记录
@@ -346,6 +369,7 @@ async def add_mp(
             if avatar_path:
                 existing_feed.mp_cover = avatar_path
             existing_feed.mp_intro = mp_intro
+            existing_feed.rss_limit = normalized_rss_limit
             existing_feed.updated_at = now
         else:
             # 创建新的Feed记录
@@ -360,6 +384,7 @@ async def add_mp(
                 faker_id=mp_id,
                 update_time=0,
                 sync_time=0,
+                rss_limit=normalized_rss_limit,
             )
             session.add(new_feed)
            
@@ -379,6 +404,7 @@ async def add_mp(
             "mp_cover": feed.mp_cover,
             "mp_intro": feed.mp_intro,
             "status": feed.status,
+            "rss_limit": feed.rss_limit,
             "faker_id":mp_id,
             "created_at": feed.created_at.isoformat()
         })
@@ -392,6 +418,69 @@ async def add_mp(
                 message="添加公众号失败"
             )
         )
+
+
+@router.put("/{mp_id}", summary="更新订阅号")
+async def update_mp(
+    mp_id: str,
+    payload: FeedUpdatePayload,
+    current_user: dict = Depends(get_current_user)
+):
+    session = DB.get_session()
+    try:
+        from core.models.feed import Feed
+
+        mp = session.query(Feed).filter(Feed.id == mp_id).first()
+        if not mp:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_response(
+                    code=40401,
+                    message="订阅号不存在"
+                )
+            )
+
+        if payload.mp_name is not None:
+            mp.mp_name = payload.mp_name
+        if payload.mp_intro is not None:
+            mp.mp_intro = payload.mp_intro
+        if payload.status is not None:
+            if isinstance(payload.status, bool):
+                mp.status = 1 if payload.status else 0
+            else:
+                mp.status = int(payload.status)
+        if payload.rss_limit is not None:
+            mp.rss_limit = _normalize_rss_limit(payload.rss_limit)
+        mp.updated_at = datetime.now()
+
+        session.commit()
+        session.refresh(mp)
+
+        return success_response({
+            "id": mp.id,
+            "mp_id": mp.id,
+            "mp_name": mp.mp_name,
+            "mp_cover": mp.mp_cover,
+            "mp_intro": mp.mp_intro,
+            "status": mp.status,
+            "rss_limit": mp.rss_limit,
+            "sync_time": mp.sync_time,
+        })
+    except HTTPException:
+        session.rollback()
+        raise
+    except Exception as e:
+        session.rollback()
+        print(f"更新订阅号错误: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_201_CREATED,
+            detail=error_response(
+                code=50001,
+                message="更新订阅号失败"
+            )
+        )
+    finally:
+        session.close()
 
 
 @router.delete("/{mp_id}", summary="删除订阅号")

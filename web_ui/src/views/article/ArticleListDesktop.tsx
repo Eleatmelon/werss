@@ -307,8 +307,7 @@ const ArticleListDesktop: React.FC = () => {
   }
 
   const processedContent = (record: any) => {
-    return record.content
-      .replace(/(<img[^>]*src=["'])(?!\/static\/res\/logo\/)([^"']*)/g, '$1/static/res/logo/$2')
+    return (record.content || '')
       .replace(/<img([^>]*)width=["'][^"']*["']([^>]*)>/g, '<img$1$2>')
   }
 
@@ -439,6 +438,10 @@ const ArticleListDesktop: React.FC = () => {
   const handleRefresh = async () => {
     try {
       const values = refreshForm.getValues()
+      if (values.endPage < values.startPage) {
+        Message.warning('结束页不能小于起始页')
+        return
+      }
       setFullLoading(true)
       await UpdateMps(activeMpId, {
         start_page: values.startPage,
@@ -514,12 +517,28 @@ const ArticleListDesktop: React.FC = () => {
 
   const renderPagination = (current: number, pageSize: number, total: number, onChange: (page: number, pageSize: number) => void) => {
     const totalPages = Math.ceil(total / pageSize)
+    const handleJump = (rawValue: string) => {
+      const targetPage = parseInt(rawValue, 10)
+      if (Number.isNaN(targetPage)) {
+        return
+      }
+      onChange(Math.min(totalPages, Math.max(1, targetPage)), pageSize)
+    }
+
     return (
       <div className="flex items-center justify-between mt-4">
         <div className="text-sm text-muted-foreground">
           共 {total} 条，第 {current} / {totalPages} 页
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onChange(1, pageSize)}
+            disabled={current === 1}
+          >
+            首页
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -535,6 +554,39 @@ const ArticleListDesktop: React.FC = () => {
             disabled={current >= totalPages}
           >
             下一页
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onChange(totalPages, pageSize)}
+            disabled={current >= totalPages}
+          >
+            末页
+          </Button>
+          <Input
+            key={`${current}-${totalPages}`}
+            type="number"
+            min={1}
+            max={totalPages}
+            defaultValue={current}
+            className="w-20 h-9"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                handleJump((e.target as HTMLInputElement).value)
+              }
+            }}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={(e) => {
+              const input = (e.currentTarget.previousElementSibling as HTMLInputElement | null)
+              if (input) {
+                handleJump(input.value)
+              }
+            }}
+          >
+            跳转
           </Button>
         </div>
       </div>
@@ -844,7 +896,7 @@ const ArticleListDesktop: React.FC = () => {
           <DialogHeader>
             <DialogTitle>刷新设置</DialogTitle>
             <DialogDescription>
-              设置要刷新的文章页面范围。默认只爬取第1页，如需爬取更多页可手动设置。
+              设置要刷新的文章页面范围。第 1 页表示最新一页，默认只爬取第 1 页，如需爬取更多页可手动设置。
               系统会自动跳过已存在的文章，连续遇到3篇已存在文章时会停止处理当前公众号。
             </DialogDescription>
           </DialogHeader>

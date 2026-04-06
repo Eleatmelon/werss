@@ -145,7 +145,11 @@ class MpsApi(WxGather):
         should_stop_by_date = False
         found_start_date_article = False  # 标记是否找到了起始日期的文章
         consecutive_existing_count = 0  # 连续遇到已存在文章的数量
-        max_consecutive_existing = 3  # 连续遇到多少篇已存在文章后停止处理当前公众号
+        max_consecutive_existing = self.get_max_consecutive_existing()
+        if max_consecutive_existing is None:
+            print_info("连续已存在文章停止阈值已禁用，将不会因重复文章提前停止")
+        else:
+            print_info(f"连续已存在文章停止阈值: {max_consecutive_existing}")
         while True:
             # 如果达到MaxPage但还没找到起始日期的文章，继续抓取
             if i >= MaxPage and found_start_date_article:
@@ -190,6 +194,24 @@ class MpsApi(WxGather):
                     app_msg_list.reverse()  # 反转列表，最新的在前
                     should_stop_this_page = False  # 标记是否应该停止处理当前页
                     for item in app_msg_list:
+                        # 先检查文章发布时间，确保即使文章已存在，也能正确更新页码/日期停止条件
+                        if 'update_time' in item:
+                            try:
+                                publish_timestamp = int(item['update_time'])
+                                if publish_timestamp < 10000000000:  # 秒级时间戳
+                                    publish_timestamp *= 1000
+                                publish_date = datetime.fromtimestamp(publish_timestamp / 1000).date()
+                                if publish_date >= collect_start_date:
+                                    found_start_date_article = True
+                                if publish_date < collect_start_date:
+                                    should_stop_by_date = True
+                                    if found_start_date_article:
+                                        print_info(f"文章发布时间 {publish_date} 早于采集起始日期 {collect_start_date}，且已找到范围内的文章，将在本页处理完后停止抓取")
+                                    else:
+                                        print_info(f"文章发布时间 {publish_date} 早于采集起始日期 {collect_start_date}，但尚未找到范围内的文章，继续抓取")
+                            except (ValueError, TypeError, OSError) as e:
+                                logger.warning(f"解析文章发布时间失败: {e}")
+
                         # 先检查文章是否已存在且有完整内容，如果存在则跳过
                         article_id = str(item.get("aid", ""))
                         article_exists = False
@@ -207,7 +229,7 @@ class MpsApi(WxGather):
                                     consecutive_existing_count += 1
                                     print_info(f"文章已存在且有完整内容，跳过处理: {full_article_id} (连续第{consecutive_existing_count}篇)")
                                     # 如果连续遇到多篇已存在的文章，停止处理当前公众号
-                                    if consecutive_existing_count >= max_consecutive_existing:
+                                    if max_consecutive_existing is not None and consecutive_existing_count >= max_consecutive_existing:
                                         print_info(f"连续遇到{consecutive_existing_count}篇已存在文章，停止处理当前公众号: {Mps_title}")
                                         should_stop_by_date = True  # 使用这个标志来停止循环
                                         should_stop_this_page = True  # 标记停止当前页
@@ -228,27 +250,6 @@ class MpsApi(WxGather):
                         # 如果应该停止当前页（遇到连续已存在文章），跳出循环
                         if should_stop_this_page:
                             break
-                        
-                        # 检查文章发布时间，如果早于起始日期则停止抓取
-                        if 'update_time' in item:
-                            try:
-                                publish_timestamp = int(item['update_time'])
-                                if publish_timestamp < 10000000000:  # 秒级时间戳
-                                    publish_timestamp *= 1000
-                                publish_date = datetime.fromtimestamp(publish_timestamp / 1000).date()
-                                # 如果找到了起始日期或之后的文章，标记为已找到
-                                if publish_date >= collect_start_date:
-                                    found_start_date_article = True
-                                # 如果文章发布时间早于起始日期，标记需要停止（但只有在已找到范围内文章时才真正停止）
-                                if publish_date < collect_start_date:
-                                    should_stop_by_date = True
-                                    if found_start_date_article:
-                                        print_info(f"文章发布时间 {publish_date} 早于采集起始日期 {collect_start_date}，且已找到范围内的文章，将在本页处理完后停止抓取")
-                                    else:
-                                        print_info(f"文章发布时间 {publish_date} 早于采集起始日期 {collect_start_date}，但尚未找到范围内的文章，继续抓取")
-                                    # 不立即 break，继续处理本页的其他文章，以便找到范围内的文章
-                            except (ValueError, TypeError, OSError) as e:
-                                logger.warning(f"解析文章发布时间失败: {e}")
                         time.sleep(random.randint(1,3))
                         # info = '"{}","{}","{}","{}"'.format(str(item["aid"]), item['title'], item['link'], str(item['create_time']))
                         if Gather_Content:
@@ -268,8 +269,11 @@ class MpsApi(WxGather):
                     # 只有当找到早于起始日期的文章，并且已经找到过在范围内的文章时，才停止
                     # 或者遇到连续已存在文章时，也停止
                     if should_stop_by_date:
-                        if found_start_date_article or consecutive_existing_count >= max_consecutive_existing:
-                        break
+                        if found_start_date_article or (
+                            max_consecutive_existing is not None
+                            and consecutive_existing_count >= max_consecutive_existing
+                        ):
+                            break
                     print(f"第{i+1}页爬取成功\n")
                 # 翻页
                 i += 1

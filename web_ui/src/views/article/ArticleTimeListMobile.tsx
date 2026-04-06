@@ -152,8 +152,7 @@ const ArticleTimeListMobile: React.FC = () => {
   }
 
   const processedContent = (record: any) => {
-    return record.content
-      .replace(/(<img[^>]*src=["'])(?!\/static\/res\/logo\/)([^"']*)/g, '$1/static/res/logo/$2')
+    return (record.content || '')
       .replace(/<img([^>]*)width=["'][^"']*["']([^>]*)>/g, '<img$1$2>')
   }
 

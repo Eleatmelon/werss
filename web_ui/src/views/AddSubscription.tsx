@@ -21,6 +21,7 @@ interface FormValues {
   wx_id: string
   avatar: string
   description: string
+  rss_limit: number
 }
 
 const AddSubscription: React.FC = () => {
@@ -38,7 +39,8 @@ const AddSubscription: React.FC = () => {
       name: '',
       wx_id: '',
       avatar: '',
-      description: ''
+      description: '',
+      rss_limit: 0
     },
     mode: 'onChange'
   })
@@ -112,7 +114,8 @@ const AddSubscription: React.FC = () => {
         mp_name: values.name,
         mp_id: values.wx_id,
         avatar: values.avatar,
-        mp_intro: values.description
+        mp_intro: values.description,
+        rss_limit: Number.isFinite(values.rss_limit) ? values.rss_limit : 0
       })
 
       toast({
@@ -361,6 +364,30 @@ const AddSubscription: React.FC = () => {
                         />
                       </div>
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="rss_limit"
+                rules={{
+                  min: { value: 0, message: 'RSS 条目数不能小于 0' }
+                }}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>RSS 条目数</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min={0}
+                        {...field}
+                        onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 0)}
+                        className="max-w-[240px]"
+                      />
+                    </FormControl>
+                    <FormDescription>填 0 表示该公众号 RSS 输出全量历史；填正整数表示最多输出对应篇数。</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}

@@ -44,6 +44,7 @@ const SubscriptionManagement: React.FC = () => {
   const [searchText, setSearchText] = useState('')
   const [visible, setVisible] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [refreshModalOpen, setRefreshModalOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
 
@@ -52,7 +53,15 @@ const SubscriptionManagement: React.FC = () => {
       mp_id: '',
       mp_name: '',
       mp_intro: '',
-      status: true
+      status: true,
+      rss_limit: 0
+    }
+  })
+
+  const refreshForm = useForm({
+    defaultValues: {
+      startPage: 1,
+      endPage: 1
     }
   })
 
@@ -107,14 +116,32 @@ const SubscriptionManagement: React.FC = () => {
       Message.warning(t('subscriptions.messages.selectFirst'))
       return
     }
+    setRefreshModalOpen(true)
+  }
+
+  const handleRefreshSubmit = async () => {
+    if (!selectedSubscription) {
+      Message.warning(t('subscriptions.messages.selectFirst'))
+      return
+    }
+    const values = refreshForm.getValues()
+    if (values.startPage < 1 || values.endPage < 1) {
+      Message.warning('页码必须大于等于 1')
+      return
+    }
+    if (values.endPage < values.startPage) {
+      Message.warning('结束页不能小于起始页')
+      return
+    }
     setRefreshing(true)
     try {
       await UpdateMps(selectedSubscription.mp_id, {
-        start_page: 0,
-        end_page: 1
+        start_page: values.startPage,
+        end_page: values.endPage
       })
       
       Message.success(t('subscriptions.messages.refreshSuccess'))
+      setRefreshModalOpen(false)
       
       setTimeout(() => {
         loadSubscriptions()
@@ -169,7 +196,8 @@ const SubscriptionManagement: React.FC = () => {
   const handleEdit = (subscription: Subscription) => {
     form.reset({
       ...subscription,
-      status: subscription.status === 1
+      status: subscription.status === 1,
+      rss_limit: subscription.rss_limit ?? 0
     })
     setVisible(true)
   }
@@ -523,6 +551,17 @@ const SubscriptionManagement: React.FC = () => {
                     </div>
                   )}
 
+                  <div className="p-4 bg-muted/30 rounded-lg border">
+                    <div className="text-muted-foreground text-xs mb-2 font-semibold">
+                      RSS 条目数
+                    </div>
+                    <div className="text-sm text-foreground font-medium">
+                      {selectedSubscription.rss_limit && selectedSubscription.rss_limit > 0
+                        ? `${selectedSubscription.rss_limit} 篇`
+                        : '全量历史'}
+                    </div>
+                  </div>
+
                   {/* 简介卡片 */}
                   <div className="col-span-full p-6 bg-muted/30 rounded-lg border">
                     <div className="text-foreground text-sm mb-3 font-semibold flex items-center gap-2">
@@ -571,7 +610,65 @@ const SubscriptionManagement: React.FC = () => {
         </div>
       </div>
 
-      {/* 弹窗部分保持不变 */}
+      <Dialog open={refreshModalOpen} onOpenChange={setRefreshModalOpen}>
+        <DialogContent className="max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>{t('articles.refreshSettings')}</DialogTitle>
+            <DialogDescription>
+              设置要刷新的文章页面范围。第 1 页表示最新一页，第 2 页表示往前翻一页。
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...refreshForm}>
+            <form onSubmit={refreshForm.handleSubmit(handleRefreshSubmit)} className="space-y-4">
+              <FormField
+                control={refreshForm.control}
+                name="startPage"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('articles.startPage')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min={1}
+                        {...field}
+                        onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 1)}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={refreshForm.control}
+                name="endPage"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('articles.endPage')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min={1}
+                        {...field}
+                        onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 1)}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setRefreshModalOpen(false)}>
+                  {t('common.cancel')}
+                </Button>
+                <Button type="submit" disabled={refreshing}>
+                  {t('common.confirm')}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={visible} onOpenChange={setVisible}>
         <DialogContent className="max-w-[600px]">
           <DialogHeader>
@@ -616,6 +713,25 @@ const SubscriptionManagement: React.FC = () => {
                       <Textarea rows={4} {...field} />
                     </FormControl>
                     <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="rss_limit"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>RSS 条目数</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min={0}
+                        {...field}
+                        onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 0)}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                    <div className="text-xs text-muted-foreground">填 0 表示该公众号 RSS 输出全量历史；填正整数表示最多输出对应篇数。</div>
                   </FormItem>
                 )}
               />

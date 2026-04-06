@@ -10,6 +10,7 @@ export interface Subscription {
   status: number
   sync_time: string | number
   rss_url: string
+  rss_limit?: number | null
   article_count: number
   min_publish_time?: number | null
   max_publish_time?: number | null
@@ -30,6 +31,7 @@ export interface AddSubscriptionParams {
   mp_id: string
   avatar: string
   mp_intro?: string
+  rss_limit?: number
 }
 
 export interface MpItem {
@@ -74,9 +76,11 @@ export const deleteSubscription = (mp_id: string) => {
 
 // 更新订阅公众号文章列表 
 export const UpdateMps = (mp_id: string,params: { start_page?: number; end_page?: number }) => {
+   const startPage = Math.max(1, params?.start_page || 1)
+   const endPage = Math.max(startPage, params?.end_page || 1)
    const apiParams = {
-    start_page: (params?.start_page || 0),
-    end_page: params?.end_page || 1
+    start_page: startPage - 1,
+    end_page: endPage
   }
   return http.get<{code: number, message: string}>(`/wx/mps/update/${mp_id||'all'}?start_page=${apiParams.start_page}&end_page=${apiParams.end_page}`)
 }

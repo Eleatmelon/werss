@@ -2,7 +2,9 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 import os
 import json
+from urllib.parse import urlparse
 from core.content_format import format_content
+from core.config import cfg
 class RSS:
     cache_dir = os.path.normpath("data/cache/rss")
     content_cache_dir = os.path.normpath("data/cache/content")
@@ -81,19 +83,45 @@ class RSS:
         return dt_obj.strftime('%a, %d %b %Y %H:%M:%S %z')
     
     def add_logo_prefix_to_urls(self, text: str) -> str:
-        """在字符串中所有http/https开头的图片URL前添加/static/res/logo/前缀
+        """仅对微信图片添加可外部访问的代理前缀，其他图片保持原样。
         
         Args:
             text: 包含URL的原始字符串
             
         Returns:
-            处理后的字符串，所有图片URL前添加了前缀
+            处理后的字符串
         """
         import re
         try:
-            pattern = re.compile(r'(<img[^>]*src=["\'])(?!\/static\/res\/logo\/)([^"\']*)', re.IGNORECASE)
-            return pattern.sub(r'\1/static/res/logo/\2', text)
-        except:
+            allowed_hosts = {"mmbiz.qpic.cn", "mmbiz.qlogo.cn", "mmecoa.qpic.cn"}
+            rss_base_url = str(cfg.get("rss.base_url", "") or "").strip()
+            if rss_base_url and not rss_base_url.endswith("/"):
+                rss_base_url += "/"
+
+            pattern = re.compile(r'(<img[^>]*src=["\'])([^"\']*)(["\'])', re.IGNORECASE)
+
+            def replace_src(match):
+                prefix, src, suffix = match.groups()
+                normalized_src = (src or "").strip()
+                if not normalized_src:
+                    return match.group(0)
+
+                lower_src = normalized_src.lower()
+                if lower_src.startswith(("data:", "blob:", "/static/res/logo/", "static/res/logo/")):
+                    return match.group(0)
+
+                parsed = urlparse(normalized_src)
+                if parsed.scheme not in ("http", "https"):
+                    return match.group(0)
+
+                if parsed.netloc in allowed_hosts and rss_base_url:
+                    proxied_src = f"{rss_base_url}static/res/logo/{normalized_src}"
+                    return f"{prefix}{proxied_src}{suffix}"
+
+                return match.group(0)
+
+            return pattern.sub(replace_src, text)
+        except Exception:
             return text
        
     def generate_rss(self,rss_list: dict, title: str = "Mp-We-Rss", 

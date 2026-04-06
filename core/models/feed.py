@@ -9,6 +9,7 @@ class Feed(Base):
     status = Column(Integer)
     sync_time = Column(Integer)
     update_time = Column(Integer)
+    rss_limit = Column(Integer)
     created_at = Column(DateTime) 
     updated_at = Column(DateTime)
     faker_id = Column(String(255))

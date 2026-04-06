@@ -86,6 +86,8 @@ gather:
   content: ${GATHER.CONTENT:-False}
   #采集模式，web模式（可采集到发布链接)，api模式（可采集临时链接），app模式（采集最新消息）
   model: ${GATHER.MODEL:-app}
+  # 连续遇到多少篇已存在且正文完整的文章后，停止当前公众号抓取；小于等于 0 表示禁用该提前停止逻辑
+  max_consecutive_existing: ${GATHER_MAX_CONSECUTIVE_EXISTING:-3}
   #是否自动检查未采集文章内容，默认False
   content_auto_check: ${GATHER.CONTENT_AUTO_CHECK:-False}
   #自动检查未采集文章内容的时间间隔 单位秒默认59分钟 允许值 1-59分钟之间 默认59分钟
