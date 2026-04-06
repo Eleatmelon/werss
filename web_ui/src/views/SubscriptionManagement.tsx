@@ -44,6 +44,7 @@ const SubscriptionManagement: React.FC = () => {
   const [searchText, setSearchText] = useState('')
   const [visible, setVisible] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [refreshingAction, setRefreshingAction] = useState<'quick' | 'normal' | 'range' | null>(null)
   const [refreshModalOpen, setRefreshModalOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
@@ -111,11 +112,12 @@ const SubscriptionManagement: React.FC = () => {
   }
 
   // 刷新订阅（更新文章）
-  const handleDefaultRefresh = async () => {
+  const handleNormalRefresh = async () => {
     if (!selectedSubscription) {
       Message.warning(t('subscriptions.messages.selectFirst'))
       return
     }
+    setRefreshingAction('normal')
     setRefreshing(true)
     try {
       await UpdateMps(selectedSubscription.mp_id)
@@ -151,6 +153,7 @@ const SubscriptionManagement: React.FC = () => {
       }
     } finally {
       setRefreshing(false)
+      setRefreshingAction(null)
     }
   }
 
@@ -159,6 +162,7 @@ const SubscriptionManagement: React.FC = () => {
       Message.warning(t('subscriptions.messages.selectFirst'))
       return
     }
+    setRefreshingAction('quick')
     setRefreshing(true)
     try {
       await UpdateMps(selectedSubscription.mp_id, {
@@ -197,6 +201,7 @@ const SubscriptionManagement: React.FC = () => {
       }
     } finally {
       setRefreshing(false)
+      setRefreshingAction(null)
     }
   }
 
@@ -226,11 +231,13 @@ const SubscriptionManagement: React.FC = () => {
       Message.warning('结束页不能小于起始页')
       return
     }
+    setRefreshingAction('range')
     setRefreshing(true)
     try {
       await UpdateMps(selectedSubscription.mp_id, {
         start_page: values.startPage,
-        end_page: values.endPage
+        end_page: values.endPage,
+        ignore_existing_limit: true
       })
       
       Message.success(t('subscriptions.messages.refreshSuccess'))
@@ -267,6 +274,7 @@ const SubscriptionManagement: React.FC = () => {
       }
     } finally {
       setRefreshing(false)
+      setRefreshingAction(null)
     }
   }
 
@@ -533,23 +541,28 @@ const SubscriptionManagement: React.FC = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={handleDefaultRefresh}
+                      onClick={handleQuickRefresh}
                       disabled={refreshing}
                     >
-                      {refreshing ? (
+                      {refreshingAction === 'quick' ? (
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                       ) : (
                         <RefreshCw className="h-4 w-4 mr-2" />
                       )}
-                      默认刷新
+                      快速刷新
                     </Button>
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={handleQuickRefresh}
+                      onClick={handleNormalRefresh}
                       disabled={refreshing}
                     >
-                      快速刷新
+                      {refreshingAction === 'normal' ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                      )}
+                      普通刷新
                     </Button>
                     <Button
                       variant="outline"
@@ -557,6 +570,11 @@ const SubscriptionManagement: React.FC = () => {
                       onClick={handleRangeRefresh}
                       disabled={refreshing}
                     >
+                      {refreshingAction === 'range' ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                      )}
                       范围刷新
                     </Button>
                     <Button
@@ -722,9 +740,9 @@ const SubscriptionManagement: React.FC = () => {
       <Dialog open={refreshModalOpen} onOpenChange={setRefreshModalOpen}>
         <DialogContent className="max-w-[480px]">
           <DialogHeader>
-            <DialogTitle>{t('articles.refreshSettings')}</DialogTitle>
+            <DialogTitle>范围刷新设置</DialogTitle>
             <DialogDescription>
-              设置要刷新的文章页面范围。第 1 页表示最新一页，第 2 页表示往前翻一页。
+              设置要刷新的文章页面范围。第 1 页表示最新一页，第 2 页表示往前翻一页。范围刷新不会因连续命中已存在文章而提前停止。
             </DialogDescription>
           </DialogHeader>
           <Form {...refreshForm}>

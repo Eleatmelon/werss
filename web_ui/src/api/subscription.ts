@@ -75,7 +75,7 @@ export const deleteSubscription = (mp_id: string) => {
 }
 
 // 更新订阅公众号文章列表
-export const UpdateMps = (mp_id: string, params?: { start_page?: number; end_page?: number }) => {
+export const UpdateMps = (mp_id: string, params?: { start_page?: number; end_page?: number; ignore_existing_limit?: boolean }) => {
   const target = `/wx/mps/update/${mp_id || 'all'}`
   if (params?.start_page === undefined && params?.end_page === undefined) {
     return http.get<{code: number, message: string}>(target)
@@ -87,7 +87,8 @@ export const UpdateMps = (mp_id: string, params?: { start_page?: number; end_pag
   return http.get<{code: number, message: string}>(target, {
     params: {
       start_page: startPage - 1,
-      end_page: endPage
+      end_page: endPage,
+      ignore_existing_limit: params?.ignore_existing_limit === true
     }
   })
 }

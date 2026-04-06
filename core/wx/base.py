@@ -74,6 +74,8 @@ class WxGather:
         return date(2025, 12, 1)
     def get_max_consecutive_existing(self):
         """获取连续命中已存在文章后的停止阈值。"""
+        if getattr(self, "disable_consecutive_existing_stop", False):
+            return None
         raw_value = cfg.get("gather.max_consecutive_existing", 3)
         try:
             value = int(raw_value)

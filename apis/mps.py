@@ -159,6 +159,7 @@ async def update_mps(
      mp_id: str,
      start_page: Optional[int] = None,
      end_page: Optional[int] = None,
+     ignore_existing_limit: bool = False,
     current_user: dict = Depends(get_current_user)
 ):
     session = DB.get_session()
@@ -200,6 +201,8 @@ async def update_mps(
             try:
                 from core.wx import WxGather
                 wx=WxGather().Model()
+                if ignore_existing_limit:
+                    wx.disable_consecutive_existing_stop = True
                 wx.get_Articles(
                     mp.faker_id,
                     Mps_id=mp.id,
