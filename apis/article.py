@@ -681,29 +681,19 @@ async def fetch_article_content(
         
         print_info(f"正在重新获取文章内容: {article.title}, URL: {url}")
         
-        # 根据配置选择获取方式
+        # 单篇手动更新固定走 API 风格抓取，避免 web 模式在 Docker 无头环境下被微信风控卡住。
         from core.wx.base import WxGather
-        from driver.wxarticle import WXArticleFetcher
         
         content = None
         fetch_error = None
-        if cfg.get("gather.content_mode", "web") == "web":
-            # 使用 Web 模式（Playwright）
-            try:
-                result = await WXArticleFetcher().async_get_article_content(url)
-                content = result.get("content") if result else None
-                fetch_error = result.get("error") if result else None
-            except Exception as e:
-                fetch_error = str(e)
-                print_error(f"Web模式获取内容失败: {e}")
-        else:
-            # 使用 API 模式
-            try:
-                ga = WxGather().Model()
-                content = ga.content_extract(url)
-            except Exception as e:
-                fetch_error = str(e)
-                print_error(f"API模式获取内容失败: {e}")
+        try:
+            ga = WxGather().Model("api")
+            content = ga.content_extract(url)
+            if not content:
+                fetch_error = "API模式未获取到文章内容"
+        except Exception as e:
+            fetch_error = str(e)
+            print_error(f"API模式获取内容失败: {e}")
         
         if content:
             # 检查内容是否被删除
