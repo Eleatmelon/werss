@@ -437,15 +437,22 @@ const ArticleListPage: React.FC = () => {
             <div className="flex items-center gap-4">
               <div className="relative flex-1 max-w-sm">
                 <Input
-                  placeholder="搜索文章标题"
+                  placeholder="搜索标题或关键词"
                   value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    setSearchText(value)
+                    setPagination(prev => ({ ...prev, current: 1 }))
+                  }}
                   className="pr-10"
                 />
               </div>
               <Select 
                 value={mpId || "__all__"} 
-                onValueChange={(value) => setMpId(value === "__all__" ? "" : value)}
+                onValueChange={(value) => {
+                  setMpId(value === "__all__" ? "" : value)
+                  setPagination(prev => ({ ...prev, current: 1 }))
+                }}
               >
                 <SelectTrigger className="w-[200px]">
                   <SelectValue placeholder="选择订阅源" />

@@ -165,7 +165,7 @@ async def get_articles(
     offset: int = Query(0, ge=0, description="分页偏移，从 0 开始"),
     limit: int = Query(5, ge=1, le=100, description="每页条数，最大 100"),
     status: Optional[str] = Query(None, description="按状态精确筛选；不传则排除已删除文章"),
-    search: Optional[str] = Query(None, description="标题关键词，空格/|/- 拆成多词，满足任一词即匹配"),
+    search: Optional[str] = Query(None, description="标题或关键词搜索，空格/|/- 拆成多词，满足任一词即匹配"),
     mp_id: Optional[str] = Query(None, description="仅返回指定公众号 mp_id 的文章"),
     has_content: bool = Query(False, description="true 时只查含正文 content 的记录"),
     publish_from: Optional[int] = Query(
@@ -216,6 +216,7 @@ async def get_articles(
     session = DB.get_session()
     try:
         from core.models.article_tags import ArticleTag
+        from core.models.tags import Tags
 
         # 构建查询条件
         # 统一使用 ArticleBase 进行查询（包含 status 字段）
@@ -233,11 +234,20 @@ async def get_articles(
         if mp_id:
             query = query.filter(ArticleBase.mp_id == mp_id)
         if search:
-            # format_search_kw 使用 Article 模型，但 Article 继承自 ArticleBase，共享同一张表
-            # 所以可以直接使用
-            query = query.filter(
-               format_search_kw(search)
-            )
+            words = [w.strip() for w in str(search).replace("-", " ").replace("|", " ").split(" ") if w.strip()]
+            if words:
+                title_conditions = [ArticleBase.title.ilike(f"%{w}%") for w in words]
+                tag_subq = (
+                    session.query(ArticleTag.article_id)
+                    .join(Tags, Tags.id == ArticleTag.tag_id)
+                    .filter(or_(*[Tags.name.ilike(f"%{w}%") for w in words]))
+                )
+                query = query.filter(
+                    or_(
+                        or_(*title_conditions),
+                        ArticleBase.id.in_(tag_subq),
+                    )
+                )
 
         if time_low is not None:
             query = query.filter(ArticleBase.publish_time >= time_low)
