@@ -74,6 +74,11 @@ def fetch_all_article():
         logger.info(f"所有公众号更新完成,共更新{wx.all_count()}条数据")
 
 
+def _get_auto_refresh_max_page() -> int:
+    """程序自动任务默认只刷最新一页，避免扫到 MAX_PAGE。"""
+    return 1
+
+
 def test(info:str):
     print("任务测试成功",info)
 
@@ -263,10 +268,9 @@ def do_job(mp=None,task:MessageTask=None,isTest=False):
                     wx.articles.append(article_dict)
                 print_info(f"获取到 {len(wx.articles)} 篇已有文章")
             else:
-                # 正常模式：抓取新文章
-                # 使用配置的 max_page（默认1页），而不是计算从月初到现在的页数
-                max_pages = int(cfg.get("max_page", 1))
-                print_info(f"定时任务抓取，使用配置的页数: {max_pages} 页")
+                # 正常模式：抓取新文章。自动任务默认只刷最新一页。
+                max_pages = _get_auto_refresh_max_page()
+                print_info(f"定时任务抓取，使用快速刷新页数: {max_pages} 页")
                 wx.get_Articles(mp.faker_id,CallBack=UpdateArticle,Mps_id=mp.id,Mps_title=mp.mp_name, MaxPage=max_pages,Over_CallBack=Update_Over,interval=interval)
                 
                 # 抓取完成后，为文章添加标签信息
@@ -396,9 +400,8 @@ def do_job_all_feeds(feeds: list[Feed] = None, task: MessageTask = None, isTest:
                 # 正常模式：先抓取新文章，然后从数据库获取当天发布的文章
                 print_info(f"抓取 {feed.mp_name} 的新文章")
                 wx = WxGather().Model()
-                # 使用配置的 max_page（默认1页），而不是计算从月初到现在的页数
-                max_pages = int(cfg.get("max_page", 1))
-                print_info(f"定时任务抓取，使用配置的页数: {max_pages} 页")
+                max_pages = _get_auto_refresh_max_page()
+                print_info(f"定时任务抓取，使用快速刷新页数: {max_pages} 页")
                 wx.get_Articles(feed.faker_id, CallBack=UpdateArticle, Mps_id=feed.id, Mps_title=feed.mp_name, MaxPage=max_pages, Over_CallBack=Update_Over, interval=interval)
                 
                 # 抓取完成后，从数据库获取当天发布的文章（基于 publish_time）

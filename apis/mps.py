@@ -42,6 +42,11 @@ def _normalize_rss_limit(rss_limit):
     return value
 
 
+def _get_auto_refresh_max_page() -> int:
+    """程序自动触发的刷新默认只刷最新一页，避免误扫大量历史。"""
+    return 1
+
+
 class FeedUpdatePayload(BaseModel):
     mp_name: str | None = None
     mp_intro: str | None = None
@@ -413,7 +418,7 @@ async def add_mp(
         if not existing_feed:
             from core.queue import TaskQueue
             from core.wx import WxGather
-            Max_page=int(cfg.get("max_page","2"))
+            Max_page=_get_auto_refresh_max_page()
             TaskQueue.add_task( WxGather().Model().get_Articles,faker_id=feed.faker_id,Mps_id=feed.id,CallBack=UpdateArticle,MaxPage=Max_page,Mps_title=mp_name)
             
         return success_response({
