@@ -683,16 +683,14 @@ async def fetch_article_content(
         
         # 根据配置选择获取方式
         from core.wx.base import WxGather
-        from driver.wxarticle import Web
-        import random
-        import time
+        from driver.wxarticle import WXArticleFetcher
         
         content = None
         fetch_error = None
         if cfg.get("gather.content_mode", "web") == "web":
             # 使用 Web 模式（Playwright）
             try:
-                result = await Web.async_get_article_content(url)
+                result = await WXArticleFetcher().async_get_article_content(url)
                 content = result.get("content") if result else None
                 fetch_error = result.get("error") if result else None
             except Exception as e:
