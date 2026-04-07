@@ -1,4 +1,5 @@
 from datetime import datetime, date, timedelta
+import os
 from core.models.article import Article
 from .article import UpdateArticle,Update_Over
 import core.db as db
@@ -77,6 +78,100 @@ def fetch_all_article():
 def _get_auto_refresh_max_page() -> int:
     """程序自动任务默认只刷最新一页，避免扫到 MAX_PAGE。"""
     return 1
+
+
+AUTO_REFRESH_JOB_ID = "__auto_refresh_all_feeds__"
+
+
+def _is_env_enabled(name: str, default: bool = False) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return str(raw_value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _get_scan_interval_minutes() -> int:
+    raw_value = os.getenv("SCAN_INTERVAL_MINUTES", "60")
+    try:
+        interval_minutes = int(raw_value)
+    except (TypeError, ValueError):
+        print_warning(f"SCAN_INTERVAL_MINUTES 配置无效: {raw_value}，使用默认值 60 分钟")
+        return 60
+    return max(1, interval_minutes)
+
+
+def _build_auto_refresh_cron(interval_minutes: int) -> str:
+    """将分钟间隔转换为合法的 5 位 cron 表达式。"""
+    if interval_minutes < 60:
+        return f"*/{interval_minutes} * * * *"
+    if interval_minutes % 60 == 0:
+        interval_hours = max(1, interval_minutes // 60)
+        if interval_hours == 1:
+            return "0 * * * *"
+        if interval_hours < 24:
+            return f"0 */{interval_hours} * * *"
+    # 兜底：超过一天或不是 60 的整数倍时，退回每小时执行一次
+    print_warning(f"SCAN_INTERVAL_MINUTES={interval_minutes} 暂不支持精确 cron 映射，已退回每小时执行一次")
+    return "0 * * * *"
+
+
+def auto_refresh_all_feeds():
+    """按固定间隔自动快速刷新所有启用中的公众号。"""
+    if not check_session_valid():
+        return
+
+    try:
+        feeds = [feed for feed in wx_db.get_all_mps() if getattr(feed, "status", 1) == 1]
+    except Exception as e:
+        print_error(f"获取自动刷新公众号列表失败: {e}")
+        return
+
+    if not feeds:
+        print_warning("自动刷新任务：没有可刷新的启用公众号")
+        return
+
+    max_pages = _get_auto_refresh_max_page()
+    print_info(f"自动刷新任务开始：共 {len(feeds)} 个公众号，使用快速刷新页数: {max_pages} 页")
+
+    for feed in feeds:
+        try:
+            wx = WxGather().Model()
+            wx.get_Articles(
+                feed.faker_id,
+                CallBack=UpdateArticle,
+                Mps_id=feed.id,
+                Mps_title=feed.mp_name,
+                MaxPage=max_pages,
+                Over_CallBack=Update_Over,
+                interval=interval,
+            )
+            print_success(f"自动刷新完成: {feed.mp_name}")
+        except Exception as e:
+            print_error(f"自动刷新失败 [{getattr(feed, 'mp_name', getattr(feed, 'id', 'unknown'))}]: {e}")
+
+    print_success("自动刷新任务全部完成")
+
+
+def start_auto_refresh_job():
+    """根据环境变量启动自动快速刷新任务。"""
+    if not _is_env_enabled("ENABLE_AUTO_PROCESS", False):
+        print_warning("自动刷新订阅功能未启用（ENABLE_AUTO_PROCESS=False）")
+        return
+
+    interval_minutes = _get_scan_interval_minutes()
+    cron_exp = _build_auto_refresh_cron(interval_minutes)
+    job_id = scheduler.add_cron_job(
+        auto_refresh_all_feeds,
+        cron_expr=cron_exp,
+        job_id=AUTO_REFRESH_JOB_ID,
+        tag="自动刷新订阅",
+    )
+    print_success(f"已添加自动刷新订阅任务: {job_id}，间隔 {interval_minutes} 分钟")
+
+    status = scheduler.get_scheduler_status()
+    if not status["running"]:
+        scheduler.start()
+        print_info("自动刷新订阅调度器已启动")
 
 
 def test(info:str):
@@ -705,6 +800,7 @@ def reload_job():
     print_success("重载任务")
     scheduler.clear_all_jobs()
     TaskQueue.clear_queue()
+    start_auto_refresh_job()
     start_job()
 
 def run(job_id:str=None,isTest=False):
@@ -750,6 +846,7 @@ def start_all_task():
       #开启自动同步未同步 文章任务
     from jobs.fetch_no_article import start_sync_content
     start_sync_content()
+    start_auto_refresh_job()
     start_job()
 if __name__ == '__main__':
     # do_job()
